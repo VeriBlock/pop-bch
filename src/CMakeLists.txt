@@ -27,6 +27,10 @@ option(ENABLE_CLANG_TIDY "Enable clang-tidy checks for Bitcoin ABC" OFF)
 option(ENABLE_PROFILING "Select the profiling tool to use" OFF)
 option(USE_LD_GOLD "Try to use gold as a linker if available" ON)
 
+# VeriBlock
+find_package(veriblock-pop-cpp REQUIRED)
+link_libraries(veriblock::veriblock-pop-cpp)
+
 set(OS_WITH_JEMALLOC_AS_SYSTEM_DEFAULT
 	"Android"
 	"FreeBSD"
@@ -240,7 +244,6 @@ if(USE_JEMALLOC)
 		link_libraries(Jemalloc::jemalloc)
 	endif()
 endif()
-
 
 # Make sure that all the global compiler and linker flags are set BEFORE
 # including the libraries so they apply as needed.

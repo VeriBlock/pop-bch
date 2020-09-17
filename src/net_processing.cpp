@@ -1937,6 +1937,10 @@ inline static void SendBlockTransactions(const CBlock &block,
     LOCK(cs_main);
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     int nSendFlags = 0;
+
+    // VeriBlock add popData
+    resp.popData = block.popData;
+
     connman->PushMessage(pfrom,
                          msgMaker.Make(nSendFlags, NetMsgType::BLOCKTXN, resp));
 }
@@ -3308,6 +3312,7 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                         // message handling into their own functions)
                         BlockTransactions txn;
                         txn.blockhash = cmpctblock.header.GetHash();
+                        txn.popData = cmpctblock.popData;
                         blockTxnMsg << txn;
                         fProcessBLOCKTXN = true;
                     } else {
@@ -3331,6 +3336,11 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                     status = tempBlock.FillBlock(*pblock, dummy);
                     if (status == READ_STATUS_OK) {
                         fBlockReconstructed = true;
+                        if (pblock && pblock->nVersion &
+                                          VeriBlock::POP_BLOCK_VERSION_BIT) {
+                            assert(!pblock->popData.empty() &&
+                                   "POP bit is set and POP data is empty");
+                        }
                     }
                 }
             } else {
@@ -3440,7 +3450,8 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
 
             PartiallyDownloadedBlock &partialBlock =
                 *it->second.second->partialBlock;
-            ReadStatus status = partialBlock.FillBlock(*pblock, resp.txn);
+            ReadStatus status =
+                partialBlock.FillBlock(*pblock, resp.txn, resp.popData);
             if (status == READ_STATUS_INVALID) {
                 // Reset in-flight state in case of whitelist.
                 MarkBlockAsReceived(resp.blockhash);
@@ -3531,6 +3542,10 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
             vRecv >> headers[n];
             // Ignore tx count; assume it is 0.
             ReadCompactSize(vRecv);
+            if (headers[n].nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
+                altintegration::PopData tmp;
+                vRecv >> tmp;
+            }
         }
 
         return ProcessHeadersMessage(config, pfrom, connman, headers,
