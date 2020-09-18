@@ -145,6 +145,10 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        // consensus.VeriBlockPopSecurityHeight = -1;
+
         /**
          * The message start string is designed to be unlikely to occur in
          * normal data. The characters are rarely used upper ASCII, not valid as
@@ -349,6 +353,10 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        // consensus.VeriBlockPopSecurityHeight = -1;
+
         diskMagic[0] = 0x0b;
         diskMagic[1] = 0x11;
         diskMagic[2] = 0x09;
@@ -501,6 +509,10 @@ public:
 
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
+
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        consensus.VeriBlockPopSecurityHeight = 1;
 
         diskMagic[0] = 0xfa;
         diskMagic[1] = 0xbf;
