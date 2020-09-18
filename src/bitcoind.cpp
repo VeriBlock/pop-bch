@@ -25,6 +25,8 @@
 
 #include <functional>
 
+#include "vbk/bootstraps.hpp"
+
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
 
 /* Introduction text for doxygen: */
@@ -115,7 +117,14 @@ static bool AppInit(int argc, char *argv[]) {
         // Check for -chain, -testnet or -regtest parameter (Params() calls are
         // only valid after this clause)
         try {
+            // VeriBlock has been disable mainnet for a while
+            if(gArgs.GetChainName() == CBaseChainParams::MAIN) {
+                throw std::runtime_error("Mainnet is disabled. Use testnet.");
+            }
+
             SelectParams(gArgs.GetChainName());
+            // VeriBlock
+            VeriBlock::selectPopConfig(gArgs);
             node.chain = interfaces::MakeChain(node, config.GetChainParams());
         } catch (const std::exception &e) {
             return InitError(strprintf("%s\n", e.what()));

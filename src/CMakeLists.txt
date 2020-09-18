@@ -401,9 +401,11 @@ target_compile_definitions(util PUBLIC BOOST_SP_USE_STD_ATOMIC BOOST_AC_USE_STD_
 # More completely unrelated features shared by all executables.
 # Because nothing says this is different from util than "common"
 add_library(common
+  	vbk/pop_common.cpp
 	amount.cpp
 	base58.cpp
 	bloom.cpp
+	vbk/bootstraps.cpp
 	cashaddr.cpp
 	cashaddrenc.cpp
 	chainparams.cpp
