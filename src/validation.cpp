@@ -52,6 +52,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp> // boost::this_thread::interruption_point() (mingw)
 
+#include <vbk/pop_service.hpp>
+
 #include <string>
 #include <thread>
 
@@ -4525,6 +4527,14 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
         return false;
     }
 
+    bool hasPopData = VeriBlock::hasPopData(blocktree);
+
+    if (!hasPopData) {
+        LogPrintf(
+            "BTC/VBK/ALT tips not found... skipping block index loading\n");
+        return true;
+    }
+
     // Calculate nChainWork
     std::vector<std::pair<int, CBlockIndex *>> vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
@@ -4583,6 +4593,31 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
             (pindexBestHeader == nullptr ||
              CBlockIndexWorkComparator()(pindexBestHeader, pindex))) {
             pindexBestHeader = pindex;
+        }
+    }
+
+    // VeriBlock
+    // get best chain from ALT tree and update vBTC's best chain
+    {
+        AssertLockHeld(cs_main);
+
+        // load blocks
+        std::unique_ptr<CDBIterator> pcursor(blocktree.NewIterator());
+        if (!VeriBlock::loadTrees(*pcursor)) {
+            return false;
+        }
+
+        // ALT tree tip should be set - this is our last best tip
+        auto *tip = VeriBlock::GetPop().altTree->getBestChain().tip();
+        assert(tip && "we could not load tip of alt block");
+        uint256 hash(tip->getHash());
+
+        CBlockIndex *index = LookupBlockIndex(BlockHash(hash));
+        assert(index);
+        if (index->IsValid(BlockValidity::TREE)) {
+            pindexBestHeader = index;
+        } else {
+            return false;
         }
     }
 

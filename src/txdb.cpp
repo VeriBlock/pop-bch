@@ -15,6 +15,8 @@
 
 #include <boost/thread.hpp> // boost::this_thread::interruption_point() (mingw)
 
+#include <vbk/pop_service.hpp>
+
 #include <cstdint>
 
 static const char DB_COIN = 'C';
@@ -248,6 +250,11 @@ bool CBlockTreeDB::WriteBatchSync(
         batch.Write(std::make_pair(DB_BLOCK_INDEX, (*it)->GetBlockHash()),
                     CDiskBlockIndex(*it));
     }
+
+    // write BTC/VBK/ALT blocks
+    auto adaptor = VeriBlock::BlockBatchAdaptor(batch);
+    VeriBlock::saveTrees(adaptor);
+
     return WriteBatch(batch, true);
 }
 

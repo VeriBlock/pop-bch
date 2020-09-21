@@ -60,6 +60,8 @@
 #include <validationinterface.h>
 #include <walletinitinterface.h>
 
+#include <vbk/pop_service.hpp>
+
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -2412,6 +2414,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                 pblocktree.reset();
                 pblocktree.reset(
                     new CBlockTreeDB(nBlockTreeDBCache, false, fReset));
+                VeriBlock::SetPop(*pblocktree);
 
                 if (fReset) {
                     pblocktree->WriteReindexing(true);

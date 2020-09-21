@@ -1106,7 +1106,7 @@ bool loadTrees(CDBIterator &iter) {
 ```
 Also have been updated serialization methods for the VBK entites like ATV, VTB, VbkBlock etc. in the serialize.h
 serialize.h
-```
+```diff
 + #include "veriblock/entities/altblock.hpp"
 ...
 + template <typename Stream>
@@ -1206,10 +1206,128 @@ serialize.h
 +    block = altintegration::VbkBlock::fromVbkEncoding(stream);
 + }
 ```
+Now we have to add usage of such functions in the bitcoin cash. 
+Have been updated the following source files init.cpp, txdb.cpp, validation.cpp
+init.cpp
+```diff
++ #include <vbk/pop_service.hpp>
+...
+bool AppInitMain(Config &config, RPCServer &rpcServer,
+                 HTTPRPCRequestProcessor &httpRPCRequestProcessor,
+                 NodeContext &node) {
+...
+    uiInterface.InitMessage(_("Loading block index...").translated);
+        do {
+            const int64_t load_block_index_start_time = GetTimeMillis();
+            try {
+                LOCK(cs_main);
+                UnloadBlockIndex();
+                pcoinsTip.reset();
+                pcoinsdbview.reset();
+                pcoinscatcher.reset();
+                // new CBlockTreeDB tries to delete the existing file, which
+                // fails if it's still open from the previous loop. Close it
+                // first:
+                pblocktree.reset();
+                pblocktree.reset(
+                    new CBlockTreeDB(nBlockTreeDBCache, false, fReset));
++               VeriBlock::SetPop(*pblocktree);
+                ...
+            }
+        } while (false);
+...
+}
+```
+txdb.cpp
+```diff
++ #include <vbk/pop_service.hpp>
+...
+bool CBlockTreeDB::WriteBatchSync(
+    const std::vector<std::pair<int, const CBlockFileInfo *>> &fileInfo,
+    int nLastFile, const std::vector<const CBlockIndex *> &blockinfo) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<int, const CBlockFileInfo *>>::const_iterator
+             it = fileInfo.begin();
+         it != fileInfo.end(); it++) {
+        batch.Write(std::make_pair(DB_BLOCK_FILES, it->first), *it->second);
+    }
+    batch.Write(DB_LAST_BLOCK, nLastFile);
+    for (std::vector<const CBlockIndex *>::const_iterator it =
+             blockinfo.begin();
+         it != blockinfo.end(); it++) {
+        batch.Write(std::make_pair(DB_BLOCK_INDEX, (*it)->GetBlockHash()),
+                    CDiskBlockIndex(*it));
+    }
 
++    // write BTC/VBK/ALT blocks
++    auto adaptor = VeriBlock::BlockBatchAdaptor(batch);
++    VeriBlock::saveTrees(adaptor);
 
+    return WriteBatch(batch, true);
+}
 
+```
+validation.cpp
+```diff
++ #include <vbk/pop_service.hpp>
 
+bool CChainState::LoadBlockIndex(const Consensus::Params &params,
+                                 CBlockTreeDB &blocktree) {
+    AssertLockHeld(cs_main);
+    if (!blocktree.LoadBlockIndexGuts(
+            params, [this](const BlockHash &hash) EXCLUSIVE_LOCKS_REQUIRED(
+                        cs_main) { return this->InsertBlockIndex(hash); })) {
+        return false;
+    }
+
++    bool hasPopData = VeriBlock::hasPopData(blocktree);
+
++    if (!hasPopData) {
++        LogPrintf(
++            "BTC/VBK/ALT tips not found... skipping block index loading\n");
++        return true;
++    }
+
+    // Calculate nChainWork
+    std::vector<std::pair<int, CBlockIndex *>> vSortedByHeight;
+    vSortedByHeight.reserve(mapBlockIndex.size());
+    for (const std::pair<const BlockHash, CBlockIndex *> &item :
+         mapBlockIndex) {
+        CBlockIndex *pindex = item.second;
+        vSortedByHeight.push_back(std::make_pair(pindex->nHeight, pindex));
+    }
+
+    ...
+
++    // VeriBlock
++    // get best chain from ALT tree and update vBTC's best chain
++    {
++        AssertLockHeld(cs_main);
+
++        // load blocks
++        std::unique_ptr<CDBIterator> pcursor(blocktree.NewIterator());
++        if (!VeriBlock::loadTrees(*pcursor)) {
++            return false;
++        }
+
++       // ALT tree tip should be set - this is our last best tip
++        auto *tip = VeriBlock::GetPop().altTree->getBestChain().tip();
++        assert(tip && "we could not load tip of alt block");
++        uint256 hash(tip->getHash());
+
++        CBlockIndex *index = LookupBlockIndex(BlockHash(hash));
++        assert(index);
++        if (index->IsValid(BlockValidity::TREE)) {
++            pindexBestHeader = index;
++        } else {
++            return false;
++        }
++    }
+
+    return true;
+}
+
+```
 
 
 
