@@ -1329,6 +1329,131 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
 
 ```
 
+The last step is to update tests, has been updated constructor of the TestingSetup struct in the setup_common.cpp
+test/util/setup_common.cpp
+```diff
++ #include <vbk/bootstraps.hpp>
++ #include <vbk/pop_service.hpp>
+...
+TestingSetup::TestingSetup() {
+...
+    pblocktree.reset(new CBlockTreeDB(1 << 20, true));
++    // VeriBlock
++    VeriBlock::SetPop(*pblocktree);
+    pcoinsdbview.reset(new CCoinsViewDB(1 << 23, true));
+    pcoinsTip.reset(new CCoinsViewCache(pcoinsdbview.get()));
+...
+}
+...
+BasicTestingSetup::BasicTestingSetup() {
+    ...
+    SelectParams(chainName);
++   VeriBlock::selectPopConfig("regtest", "regtest", true);
+    gArgs.ForceSetArg("-printtoconsole", "0");
+    ...
+}
+```
+
+#### Add Pop mempool
+
+Now we want to add using of the popmempool to the bitcoin cash. For that we should implement few methods for the submitting pop payloads to the mempool, getting payloads during the block mining, and removing payloads after successful block submitting to the blockchain.
+First we should implement such methods in the pop_service.hpp pop_service.cpp source files.
+vbk/pop_service.hpp
+```diff
++ //! mempool methods
++ altintegration::PopData getPopData();
++ void removePayloadsFromMempool(const altintegration::PopData &popData);
++ void updatePopMempoolForReorg();
++ void addDisconnectedPopdata(const altintegration::PopData &popData);
+```
+vbk/pop_service.cpp
+```diff
++ altintegration::PopData getPopData() EXLUSIVE_LOCKS_REQUIRED(cs_main)  {
++    AssertLockHeld(cs_main);
++    return GetPop().mempool->getPop();
++ }
+
++ void removePayloadsFromMempool(const altintegration::PopData &popData)
++     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++     AssertLockHeld(cs_main);
++     GetPop().mempool->removeAll(popData);
++ }
+
++ void updatePopMempoolForReorg() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++     auto &pop = GetPop();
++     for (const auto &popData : disconnected_popdata) {
++         pop.mempool->submitAll(popData);
++     }
++     disconnected_popdata.clear();
++ }
+
++ void addDisconnectedPopdata(const altintegration::PopData &popData)
++     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++     disconnected_popdata.push_back(popData);
++ }
+```
+Now add getting popData during block mining, has been updated CreateNewBlock() in the miner.cpp
+miner.cpp
+```diff
++ #include <vbk/pop_service.hpp>
+...
++ // VeriBlock: add PopData into the block
++ if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
++    pblock->popData = VeriBlock::getPopData();
++ }
+
+if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() || !pblock->popData.vtbs.empty()) {
+   pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
+}
+...
+```
+Has been added removing popData after successful submitting to the blockchain. Has been modified ConnectTip(), DisconnectTip() and UpdateMempoolForReorg() methods in the validation.cpp and txmempool.cpp.
+validation.cpp
+```diff
+...
+ConnectTip() {
+...
++   // VeriBlock: remove from pop_mempool
++   VeriBlock::removePayloadsFromMempool(blockConnecting.popData);
+
+    // Update m_chain & related variables.
+    m_chain.SetTip(pindexNew);
+    UpdateTip(params, pindexNew);
+...
+}
+...
+DisconnectTip() {
+...
+    if (disconnectpool) {
+        disconnectpool->addForBlock(block.vtx);
+    }
+
+    // If the tip is finalized, then undo it.
+    if (pindexFinalized == pindexDelete) {
+        pindexFinalized = pindexDelete->pprev;
+    }
+
++   // VeriBlock
++   VeriBlock::addDisconnectedPopdata(block.popData);
+
+    m_chain.SetTip(pindexDelete->pprev);
+...
+}
+...
+```
+txmempool.cpp
+```diff
++ #include <vbk/pop_service.hpp>
+...
+UpdateMempoolForReorg() {
+    AssertLockHeld(cs_main);
+    std::vector<TxId> txidsUpdate;
+
++    // VeriBlock
++    VeriBlock::updatePopMempoolForReorg();
+...
+}
+```
 
 
 

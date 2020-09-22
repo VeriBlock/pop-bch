@@ -35,6 +35,9 @@
 #include <functional>
 #include <memory>
 
+#include <vbk/bootstraps.hpp>
+#include <vbk/pop_service.hpp>
+
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
 
 FastRandomContext g_insecure_rand_ctx;
@@ -58,6 +61,7 @@ BasicTestingSetup::BasicTestingSetup(const std::string &chainName)
     gArgs.ForceSetArg("-datadir", m_path_root.string());
     ClearDatadirCache();
     SelectParams(chainName);
+    VeriBlock::selectPopConfig("regtest", "regtest", true);
     gArgs.ForceSetArg("-printtoconsole", "0");
     InitLogging();
     LogInstance().StartLogging();
@@ -112,6 +116,8 @@ TestingSetup::TestingSetup(const std::string &chainName)
     GetMainSignals().RegisterBackgroundSignalScheduler(*g_rpc_node->scheduler);
 
     pblocktree.reset(new CBlockTreeDB(1 << 20, true));
+    // VeriBlock
+    VeriBlock::SetPop(*pblocktree);
     pcoinsdbview.reset(new CCoinsViewDB(1 << 23, true));
     pcoinsTip.reset(new CCoinsViewCache(pcoinsdbview.get()));
     if (!LoadGenesisBlock(chainparams)) {

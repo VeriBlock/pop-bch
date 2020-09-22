@@ -23,6 +23,8 @@
 #include <validationinterface.h>
 #include <version.h>
 
+#include <vbk/pop_service.hpp>
+
 #include <algorithm>
 
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef &_tx, const Amount _nFee,
@@ -1382,6 +1384,9 @@ void DisconnectedBlockTransactions::updateMempoolForReorg(const Config &config,
                                                           bool fAddToMempool) {
     AssertLockHeld(cs_main);
     std::vector<TxId> txidsUpdate;
+
+    // VeriBlock
+    VeriBlock::updatePopMempoolForReorg();
 
     // disconnectpool's insertion_order index sorts the entries from oldest to
     // newest, but the oldest entry will be the last tx from the latest mined

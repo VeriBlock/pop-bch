@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <vbk/pop_service.hpp>
+
 int64_t UpdateTime(CBlockHeader *pblock, const CChainParams &chainParams,
                    const CBlockIndex *pindexPrev) {
     int64_t nOldTime = pblock->nTime;
@@ -162,10 +164,13 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
     // VeriBlock: add PopData into the block
-    if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() || !pblock->popData.vtbs.empty()) {
+    if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
+        pblock->popData = VeriBlock::getPopData();
+    }
+    if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() ||
+        !pblock->popData.vtbs.empty()) {
         pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
     }
-
 
     if (IsMagneticAnomalyEnabled(consensusParams, pindexPrev)) {
         // If magnetic anomaly is enabled, we make sure transaction are

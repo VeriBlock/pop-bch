@@ -2161,6 +2161,9 @@ bool CChainState::DisconnectTip(const CChainParams &params,
         pindexFinalized = pindexDelete->pprev;
     }
 
+    // VeriBlock
+    VeriBlock::addDisconnectedPopdata(block.popData);
+
     m_chain.SetTip(pindexDelete->pprev);
 
     // Update ::ChainActive() and related variables.
@@ -2434,6 +2437,9 @@ bool CChainState::ConnectTip(const Config &config, BlockValidationState &state,
                  "Disconnecting mempool due to acceptance of upgrade block\n");
         disconnectpool.importMempool(g_mempool);
     }
+
+    // VeriBlock: remove from pop_mempool
+    VeriBlock::removePayloadsFromMempool(blockConnecting.popData);
 
     // Update m_chain & related variables.
     m_chain.SetTip(pindexNew);

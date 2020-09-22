@@ -27,6 +27,30 @@ namespace VeriBlock {
 static std::shared_ptr<PayloadsProvider> payloads = nullptr;
 static std::vector<altintegration::PopData> disconnected_popdata;
 
+altintegration::PopData getPopData() {
+    AssertLockHeld(cs_main);
+    return GetPop().mempool->getPop();
+}
+
+void removePayloadsFromMempool(const altintegration::PopData &popData) {
+    AssertLockHeld(cs_main);
+    GetPop().mempool->removeAll(popData);
+}
+
+void updatePopMempoolForReorg() {
+    AssertLockHeld(cs_main);
+    auto &pop = GetPop();
+    for (const auto &popData : disconnected_popdata) {
+        pop.mempool->submitAll(popData);
+    }
+    disconnected_popdata.clear();
+}
+
+void addDisconnectedPopdata(const altintegration::PopData &popData) {
+    AssertLockHeld(cs_main);
+    disconnected_popdata.push_back(popData);
+}
+
 void SetPop(CDBWrapper &db) {
     payloads = std::make_shared<PayloadsProvider>(db);
     std::shared_ptr<altintegration::PayloadsProvider> dbrepo = payloads;
