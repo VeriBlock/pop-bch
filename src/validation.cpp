@@ -1334,6 +1334,9 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         }
     }
 
+    altintegration::ValidationState state;
+    VeriBlock::setState(block.hashPrevBlock, state);
+
     // Move best block pointer to previous block.
     view.SetBestBlock(block.hashPrevBlock);
 
@@ -3983,6 +3986,13 @@ bool CChainState::AcceptBlockHeader(const Config &config,
     }
 
     CheckBlockIndex(chainparams.GetConsensus());
+
+    if (!VeriBlock::acceptBlock(*pindex, state)) {
+        return error(
+            "%s: ALT tree could not accept block ALT:%d:%s, reason: %s",
+            __func__, pindex->nHeight, pindex->GetBlockHash().ToString(),
+            FormatStateMessage(state));
+    }
     return true;
 }
 
@@ -4151,6 +4161,17 @@ bool CChainState::AcceptBlock(const Config &config,
 
         return error("%s: %s (block %s)", __func__, FormatStateMessage(state),
                      block.GetHash().ToString());
+    }
+
+    {
+        if (!VeriBlock::addAllBlockPayloads(block, state)) {
+            return state.Invalid(
+                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+                strprintf("Can not add POP payloads to block "
+                          "height: %d , hash: %s: %s",
+                          pindex->nHeight, block.GetHash().ToString(),
+                          FormatStateMessage(state)));
+        }
     }
 
     // If connecting the new block would require rewinding more than one block

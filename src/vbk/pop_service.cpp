@@ -9,12 +9,12 @@
 #include <dbwrapper.h>
 #include <shutdown.h>
 #include <txdb.h>
-#include <validation.h>
 
 #include <vbk/adaptors/block_batch_adaptor.hpp>
 #include <vbk/adaptors/payloads_provider.hpp>
 #include <vbk/pop_common.hpp>
 #include <vbk/pop_service.hpp>
+#include <vbk/util.hpp>
 
 #include <veriblock/storage/util.hpp>
 
@@ -26,6 +26,95 @@ namespace VeriBlock {
 
 static std::shared_ptr<PayloadsProvider> payloads = nullptr;
 static std::vector<altintegration::PopData> disconnected_popdata;
+
+bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
+    AssertLockHeld(cs_main);
+    auto containing = VeriBlock::blockToAltBlock(indexNew);
+    altintegration::ValidationState instate;
+    if (!GetPop().altTree->acceptBlockHeader(containing, instate)) {
+        LogPrintf("ERROR: alt tree cannot accept block %s\n",
+                  instate.toString());
+
+        return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
+                             REJECT_INVALID, "", "instate.GetDebugMessage()");
+    }
+
+    return true;
+}
+
+bool checkPopDataSize(const altintegration::PopData &popData,
+                      altintegration::ValidationState &state) {
+    uint32_t nPopDataSize = ::GetSerializeSize(popData, CLIENT_VERSION);
+    if (nPopDataSize >= GetPop().config->alt->getMaxPopDataSize()) {
+        return state.Invalid("popdata-overisize",
+                             "popData raw size more than allowed");
+    }
+
+    return true;
+}
+
+bool popdataStatelessValidation(const altintegration::PopData &popData,
+                                altintegration::ValidationState &state) {
+    auto &config = *GetPop().config;
+
+    for (const auto &b : popData.context) {
+        if (!altintegration::checkBlock(b, state, *config.vbk.params)) {
+            return state.Invalid("pop-vbkblock-statelessly-invalid");
+        }
+    }
+
+    for (const auto &vtb : popData.vtbs) {
+        if (!altintegration::checkVTB(vtb, state, *config.btc.params)) {
+            return state.Invalid("pop-vtb-statelessly-invalid");
+        }
+    }
+
+    for (const auto &atv : popData.atvs) {
+        if (!altintegration::checkATV(atv, state, *config.alt)) {
+            return state.Invalid("pop-atv-statelessly-invalid");
+        }
+    }
+
+    return true;
+}
+
+bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    AssertLockHeld(cs_main);
+    auto bootstrapBlockHeight =
+        GetPop().config->alt->getBootstrapBlock().height;
+    auto hash = block.GetHash();
+    auto *index = LookupBlockIndex(hash);
+
+    if (index->nHeight == bootstrapBlockHeight) {
+        // skip bootstrap block block
+        return true;
+    }
+
+    altintegration::ValidationState instate;
+
+    if (!checkPopDataSize(block.popData, instate) ||
+        !popdataStatelessValidation(block.popData, instate)) {
+        return error(
+            "[%s] block %s is not accepted because popData is invalid: %s",
+            __func__, hash.ToString(), instate.toString());
+    }
+
+    auto &provider = GetPayloadsProvider();
+    provider.write(block.popData);
+
+    GetPop().altTree->acceptBlock(
+        std::vector<uint8_t>{hash.begin(), hash.end()}, block.popData);
+
+    return true;
+}
+
+bool setState(const uint256 &block, altintegration::ValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    AssertLockHeld(cs_main);
+    return GetPop().altTree->setState(
+        std::vector<uint8_t>{block.begin(), block.end()}, state);
+}
 
 altintegration::PopData getPopData() {
     AssertLockHeld(cs_main);

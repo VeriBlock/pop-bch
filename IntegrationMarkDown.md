@@ -1455,5 +1455,250 @@ UpdateMempoolForReorg() {
 }
 ```
 
+#### Add VeriBlock AltTree
+
+At this stage we will add functions for the VeriBlock AltTree maintaining such as setState(), acceptBlock(), addAllBlockPayloads().
+vbk/pop_service.hpp
+```diff
++ #include <consensus/validation.h>
+...
++ /** Amount in satoshis (Can be negative) */
++ typedef int64_t CAmount;
+
++ class CBlockIndex;
++ class CBlock;
++ class CScript;
+class CBlockTreeDB;
+class CDBIterator;
+class CDBWrapper;
++ class BlockValidationState;
+
+namespace VeriBlock {
+
++ using BlockBytes = std::vector<uint8_t>;
++ using PoPRewards = std::map<CScript, CAmount>;
+
+void SetPop(CDBWrapper &db);
+
+PayloadsProvider &GetPayloadsProvider();
+
+//! returns true if all tips are stored in database, false otherwise
+bool hasPopData(CBlockTreeDB &db);
+altintegration::PopData getPopData();
+void saveTrees(altintegration::BlockBatchAdaptor &batch);
+bool loadTrees(CDBIterator &iter);
+
++ //! alttree methods
++ bool acceptBlock(const CBlockIndex &indexNew BlockValidationState &state);
++ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state);
++ bool setState(const uint256 &block, altintegration::ValidationState &state);
+
+//! mempool methods
+altintegration::PopData getPopData() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+void removePayloadsFromMempool(const altintegration::PopData &popData)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+void updatePopMempoolForReorg() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+void addDisconnectedPopdata(const altintegration::PopData &popData)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
++ std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks);
++ std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks);
+...
+```
+vbk/pop_service.cpp
+```diff
++ #include <vbk/util.hpp>
+...
+
++ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
++    AssertLockHeld(cs_main);
++    auto containing = VeriBlock::blockToAltBlock(indexNew);
++    altintegration::ValidationState instate;
++    if (!GetPop().altTree->acceptBlockHeader(containing, instate)) {
++        LogPrintf("ERROR: alt tree cannot accept block %s\n",
++                  instate.toString());
+
++        return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
++                             REJECT_INVALID, "", "instate.GetDebugMessage()");
++    }
+
++    return true;
++ }
+
++ bool checkPopDataSize(const altintegration::PopData &popData,
++                      altintegration::ValidationState &state) {
++    uint32_t nPopDataSize = ::GetSerializeSize(popData, CLIENT_VERSION);
++    if (nPopDataSize >= GetPop().config->alt->getMaxPopDataSize()) {
++        return state.Invalid("popdata-overisize",
++                             "popData raw size more than allowed");
++    }
+
++    return true;
++ }
+
++ bool popdataStatelessValidation(const altintegration::PopData &popData,
++                                altintegration::ValidationState &state) {
++    auto &config = *GetPop().config;
+
++    for (const auto &b : popData.context) {
++        if (!altintegration::checkBlock(b, state, *config.vbk.params)) {
++            return state.Invalid("pop-vbkblock-statelessly-invalid");
++        }
++    }
+
++    for (const auto &vtb : popData.vtbs) {
++        if (!altintegration::checkVTB(vtb, state, *config.btc.params)) {
++            return state.Invalid("pop-vtb-statelessly-invalid");
++        }
++    }
+
++    for (const auto &atv : popData.atvs) {
++        if (!altintegration::checkATV(atv, state, *config.alt)) {
++            return state.Invalid("pop-atv-statelessly-invalid");
++        }
++    }
+
++    return true;
++ }
+
++ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
++    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++    AssertLockHeld(cs_main);
++    auto bootstrapBlockHeight =
++        GetPop().config->alt->getBootstrapBlock().height;
++    auto hash = block.GetHash();
++    auto *index = LookupBlockIndex(hash);
+
++    if (index->nHeight == bootstrapBlockHeight) {
++        // skip bootstrap block block
++        return true;
++    }
+
++    altintegration::ValidationState instate;
+
++    if (!checkPopDataSize(block.popData, instate) ||
++        !popdataStatelessValidation(block.popData, instate)) {
++        return error(
++            "[%s] block %s is not accepted because popData is invalid: %s",
++            __func__, hash.ToString(), instate.toString());
++    }
+
++    auto &provider = GetPayloadsProvider();
++    provider.write(block.popData);
+
++    GetPop().altTree->acceptBlock(
++        std::vector<uint8_t>{hash.begin(), hash.end()}, block.popData);
+
++    return true;
++ }
+
++bool setState(const uint256 &block, altintegration::ValidationState &state)
++    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++    AssertLockHeld(cs_main);
++    return GetPop().altTree->setState(
++        std::vector<uint8_t>{block.begin(), block.end()}, state);
++ }
+```
+Have been updated validation.cpp, init.cpp.
+validation.cpp
+```diff
+ApplyBlockUndo() {
+...
++   altintegration::ValidationState state;
++   VeriBlock::setState(block.hashPrevBlock, state);
+
+    // Move best block pointer to previous block.
+    view.SetBestBlock(block.hashPrevBlock);
+
+    return fClean ? DisconnectResult::OK : DisconnectResult::UNCLEAN;
+}
+
+...
+
+AcceptBlockHeader() {
+...
+    if (pindex == nullptr) {
+        pindex = AddToBlockIndex(block);
+    }
+
+    if (ppindex) {
+        *ppindex = pindex;
+    }
+
+    CheckBlockIndex(chainparams.GetConsensus());
+
++    if (!VeriBlock::acceptBlock(*pindex, state)) {
++        return error(
++            "%s: ALT tree could not accept block ALT:%d:%s, reason: %s",
++            __func__, pindex->nHeight, pindex->GetBlockHash().ToString(),
++            FormatStateMessage(state));
++    }
+    return true;
+}
+
+...
+
+AcceptBlock() {
+...
+    if (!CheckBlock(block, state, consensusParams,
+                    BlockValidationOptions(config)) ||
+        !ContextualCheckBlock(block, state, consensusParams, pindex->pprev)) {
+        if (state.IsInvalid() &&
+            state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
+            pindex->nStatus = pindex->nStatus.withFailed();
+            setDirtyBlockIndex.insert(pindex);
+        }
+
+        return error("%s: %s (block %s)", __func__, FormatStateMessage(state),
+                     block.GetHash().ToString());
+    }
+
++    {
++        if (!VeriBlock::addAllBlockPayloads(block, state)) {
++            return state.Invalid(
++                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
++                strprintf("Can not add POP payloads to block "
++                          "height: %d , hash: %s: %s",
++                          pindex->nHeight, block.GetHash().ToString(),
++                          FormatStateMessage(state)));
++        }
++    }
+...
+}
+```
+init.cpp
+```diff
+AppInitMain() {
+...
++    {
++        auto &pop = VeriBlock::GetPop();
++        auto *tip = ChainActive().Tip();
++        altintegration::ValidationState state;
++        LOCK(cs_main);
++        bool ret = VeriBlock::setState(tip->GetBlockHash(), state);
++        auto *alttip = pop.altTree->getBestChain().tip();
++        assert(ret && "bad state");
++        assert(tip->nHeight == alttip->getHeight());
+
++        LogPrintf("ALT tree best height = %d\n",
++                  pop.altTree->getBestChain().tip()->getHeight());
++        LogPrintf("VBK tree best height = %d\n",
++                  pop.altTree->vbk().getBestChain().tip()->getHeight());
++        LogPrintf("BTC tree best height = %d\n",
++                  pop.altTree->btc().getBestChain().tip()->getHeight());
++    }
+
+    // Start Avalanche's event loop.
+    g_avalanche->startEventLoop(*node.scheduler);
+
+    return true;
+}
+```
+undo_tests.cpp
+```diff
+- BOOST_FIXTURE_TEST_SUITE(undo_tests, BasicTestingSetup)
++ BOOST_FIXTURE_TEST_SUITE(undo_tests, TestingSetup)
+```
+#### Add VeriBlock specific RPC methods
 
 
