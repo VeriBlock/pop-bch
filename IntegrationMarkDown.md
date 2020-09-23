@@ -1699,6 +1699,10 @@ undo_tests.cpp
 - BOOST_FIXTURE_TEST_SUITE(undo_tests, BasicTestingSetup)
 + BOOST_FIXTURE_TEST_SUITE(undo_tests, TestingSetup)
 ```
+
+#### 
+
+
 #### Add VeriBlock specific RPC methods
 
 

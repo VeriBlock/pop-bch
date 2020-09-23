@@ -78,8 +78,7 @@ bool popdataStatelessValidation(const altintegration::PopData &popData,
     return true;
 }
 
-bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
     AssertLockHeld(cs_main);
     auto bootstrapBlockHeight =
         GetPop().config->alt->getBootstrapBlock().height;
@@ -109,8 +108,7 @@ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
     return true;
 }
 
-bool setState(const uint256 &block, altintegration::ValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+bool setState(const uint256 &block, altintegration::ValidationState &state) {
     AssertLockHeld(cs_main);
     return GetPop().altTree->setState(
         std::vector<uint8_t>{block.begin(), block.end()}, state);
@@ -253,6 +251,15 @@ bool loadTrees(CDBIterator &iter) {
     }
 
     return true;
+}
+
+std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
+    AssertLockHeld(cs_main);
+    return altintegration::getLastKnownBlocks(GetPop().altTree->vbk(), blocks);
+}
+std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
+    AssertLockHeld(cs_main);
+    return altintegration::getLastKnownBlocks(GetPop().altTree->btc(), blocks);
 }
 
 } // namespace VeriBlock

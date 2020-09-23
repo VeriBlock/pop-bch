@@ -190,6 +190,9 @@ add_boost_unit_tests_to_suite(bitcoin test_bitcoin
 		# RPC Tests
 		../rpc/test/server_tests.cpp
 
+		# VeriBlock Tests
+		../vbk/test/unit/e2e_pop_tests.cpp
+
 		# Wallet tests
 		${BITCOIN_WALLET_TESTS}
 )

@@ -40,9 +40,12 @@ void saveTrees(altintegration::BlockBatchAdaptor &batch);
 bool loadTrees(CDBIterator &iter);
 
 //! alttree methods
-bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state);
-bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state);
-bool setState(const uint256 &block, altintegration::ValidationState &state);
+bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool setState(const uint256 &block, altintegration::ValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 //! mempool methods
 altintegration::PopData getPopData() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
