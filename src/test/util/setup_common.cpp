@@ -175,8 +175,6 @@ TestChain100Setup::TestChain100Setup() {
     }
 
     auto &tree = *VeriBlock::GetPop().altTree;
-    printf("TestChain100Setup() height: %d \n",
-           tree.getBestChain().tip()->getHeight());
     assert(tree.getBestChain().tip()->getHeight() ==
            ChainActive().Tip()->nHeight);
 }
