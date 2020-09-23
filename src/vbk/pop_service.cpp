@@ -30,16 +30,12 @@ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
     AssertLockHeld(cs_main);
     auto containing = VeriBlock::blockToAltBlock(indexNew);
     altintegration::ValidationState instate;
-    printf("VeriBlock acceptBlock() indexNew.height: %d \n", indexNew.nHeight);
     if (!GetPop().altTree->acceptBlockHeader(containing, instate)) {
         LogPrintf("ERROR: alt tree cannot accept block %s\n",
                   instate.toString());
         return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
                              REJECT_INVALID, "", "instate.GetDebugMessage()");
     }
-
-    printf("VeriBlock acceptBlock() best block height: %d \n",
-           GetPop().altTree->getBestChain().tip()->getHeight());
 
     return true;
 }
@@ -112,11 +108,8 @@ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
 
 bool setState(const BlockHash &hash, altintegration::ValidationState &state) {
     AssertLockHeld(cs_main);
-    bool res = GetPop().altTree->setState(
+    return GetPop().altTree->setState(
         std::vector<uint8_t>{hash.begin(), hash.end()}, state);
-    printf("VeriBlock setState() res: %d, best block height: %d \n", res,
-           GetPop().altTree->getBestChain().tip()->getHeight());
-    return res;
 }
 
 altintegration::PopData getPopData() {

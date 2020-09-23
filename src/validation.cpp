@@ -1802,7 +1802,6 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     }
 
     altintegration::ValidationState _state;
-    printf("ConnectBlock() pindex.height: %d \n", pindex->nHeight);
     if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                              REJECT_INVALID, "bad-block-pop",
