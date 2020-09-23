@@ -173,6 +173,12 @@ TestChain100Setup::TestChain100Setup() {
         CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
         m_coinbase_txns.push_back(b.vtx[0]);
     }
+
+    auto &tree = *VeriBlock::GetPop().altTree;
+    printf("TestChain100Setup() height: %d \n",
+           tree.getBestChain().tip()->getHeight());
+    assert(tree.getBestChain().tip()->getHeight() ==
+           ChainActive().Tip()->nHeight);
 }
 
 //

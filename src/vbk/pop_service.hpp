@@ -12,6 +12,7 @@
 #include <vbk/adaptors/block_batch_adaptor.hpp>
 #include <vbk/adaptors/payloads_provider.hpp>
 #include <vbk/pop_common.hpp>
+#include <vbk/util.hpp>
 
 /** Amount in satoshis (Can be negative) */
 typedef int64_t CAmount;
@@ -44,7 +45,7 @@ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-bool setState(const uint256 &block, altintegration::ValidationState &state)
+bool setState(const BlockHash &hash, altintegration::ValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 //! mempool methods

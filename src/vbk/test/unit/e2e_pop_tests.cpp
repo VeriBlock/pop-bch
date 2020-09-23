@@ -51,14 +51,12 @@ BOOST_FIXTURE_TEST_CASE(ValidBlockIsAccepted, E2eFixture) {
         BOOST_REQUIRE(vbk == popminer.vbk().getBestChain().tip()->getHash());
     }
 
-    // create block that is not on main chain
-    auto fork1tip = CreateAndProcessBlock({}, cbKey);
+    block = CreateAndProcessBlock({}, cbKey);
 
     CreateAndProcessBlock({}, cbKey);
 
-    // endorse block that is not on main chain
-    block = endorseAltBlockAndMine(fork1tip.GetHash(), 1);
-    BOOST_CHECK(block.popData.atvs.size() == 0);
+    block = endorseAltBlockAndMine(block.GetHash(), 1);
+    BOOST_CHECK(block.popData.atvs.size() == 1);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

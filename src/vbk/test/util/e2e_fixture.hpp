@@ -12,8 +12,8 @@
 #include <config.h>
 #include <consensus/validation.h>
 #include <test/util/setup_common.h>
-#include <validation.h>
 #include <txmempool.h>
+#include <validation.h>
 
 #include <vbk/bootstraps.hpp>
 #include <vbk/pop_service.hpp>
@@ -43,7 +43,7 @@ struct E2eFixture : public TestChain100Setup {
     CScript cbKey = CScript()
                     << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
     MockMiner popminer;
-    altintegration::ValidationState state;
+    altintegration::ValidationState state_;
     altintegration::PopContext *pop;
     std::vector<uint8_t> defaultPayoutInfo = {1, 2, 3, 4, 5};
 
@@ -94,8 +94,8 @@ struct E2eFixture : public TestChain100Setup {
 
         auto publicationdata = createPublicationData(endorsed, payoutInfo);
         auto vbktx = popminer.createVbkTxEndorsingAltBlock(publicationdata);
-        auto atv = popminer.applyATV(vbktx, state);
-        BOOST_CHECK(state.IsValid());
+        auto atv = popminer.applyATV(vbktx, state_);
+        BOOST_CHECK(state_.IsValid());
         return atv;
     }
 
@@ -132,14 +132,17 @@ struct E2eFixture : public TestChain100Setup {
                            return endorseAltBlock(hash, {}, payoutInfo);
                        });
 
+        BOOST_CHECK_EQUAL(atvs.size(), hashes.size());
         auto &pop_mempool = *pop->mempool;
-        altintegration::ValidationState state;
-        for (const auto &atv : atvs) {
-            pop_mempool.submit(atv, state);
-        }
 
         for (const auto &vtb : vtbs) {
-            pop_mempool.submit(vtb, state);
+            BOOST_CHECK_MESSAGE(pop_mempool.submit(vtb, state_),
+                                state_.toString());
+        }
+
+        for (const auto &atv : atvs) {
+            BOOST_CHECK_MESSAGE(pop_mempool.submit(atv, state_),
+                                state_.toString());
         }
 
         return CreateAndProcessBlock({}, cbKey);

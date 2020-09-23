@@ -1801,6 +1801,16 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
         txIndex++;
     }
 
+    altintegration::ValidationState _state;
+    printf("ConnectBlock() pindex.height: %d \n", pindex->nHeight);
+    if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
+                             REJECT_INVALID, "bad-block-pop",
+                             strprintf("Block %s is POP invalid: %s",
+                                       pindex->GetBlockHash().ToString(),
+                                       _state.toString()));
+    }
+
     int64_t nTime3 = GetTimeMicros();
     nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH,
@@ -2078,6 +2088,10 @@ static void UpdateTip(const CChainParams &params, CBlockIndex *pindexNew) {
         g_best_block = pindexNew->GetBlockHash();
         g_best_block_cv.notify_all();
     }
+
+    altintegration::ValidationState state;
+    bool ret = VeriBlock::setState(pindexNew->GetBlockHash(), state);
+    assert(ret && "block has been checked previously and should be valid");
 
     LogPrintf("%s: new best=%s height=%d version=0x%08x log2_work=%.8g tx=%ld "
               "date='%s' progress=%f cache=%.1fMiB(%utxo)\n",
@@ -4300,6 +4314,28 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
                      FormatStateMessage(state));
     }
 
+    // VeriBlock: Block that have been passed to TestBlockValidity may not exist
+    // in alt tree, because technically it was not created ("mined"). in this
+    // case, add it and then remove
+    auto &tree = *VeriBlock::GetPop().altTree;
+    std::vector<uint8_t> _hash{block_hash.begin(), block_hash.end()};
+    bool shouldRemove = false;
+    if (!tree.getBlockIndex(_hash)) {
+        shouldRemove = true;
+        auto containing = VeriBlock::blockToAltBlock(indexDummy);
+        altintegration::ValidationState _state;
+        bool ret = tree.acceptBlockHeader(containing, _state);
+        assert(ret && "alt tree can not accept alt block");
+
+        tree.acceptBlock(_hash, block.popData);
+    }
+
+    auto _f = altintegration::Finalizer([shouldRemove, _hash, &tree]() {
+        if (shouldRemove) {
+            tree.removeSubtree(_hash);
+        }
+    });
+
     if (!::ChainstateActive().ConnectBlock(block, state, &indexDummy, viewNew,
                                            params, validationOptions, true)) {
         return false;
@@ -5128,6 +5164,14 @@ bool CChainState::LoadGenesisBlock(const CChainParams &chainparams) {
             return error("%s: writing genesis block to disk failed", __func__);
         }
         CBlockIndex *pindex = AddToBlockIndex(block);
+
+        BlockValidationState state;
+        if (!VeriBlock::acceptBlock(*pindex, state)) {
+            printf("LoadGenesisBlock() cant load genesis block to the "
+                   "library\n");
+            return false;
+        }
+
         ReceivedBlockTransactions(block, pindex, blockPos);
     } catch (const std::runtime_error &e) {
         return error("%s: failed to write genesis block: %s", __func__,

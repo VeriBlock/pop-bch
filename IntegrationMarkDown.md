@@ -1461,6 +1461,7 @@ At this stage we will add functions for the VeriBlock AltTree maintaining such a
 vbk/pop_service.hpp
 ```diff
 + #include <consensus/validation.h>
++ #include <vbk/util.hpp>
 ...
 + /** Amount in satoshis (Can be negative) */
 + typedef int64_t CAmount;
@@ -1491,7 +1492,7 @@ bool loadTrees(CDBIterator &iter);
 + //! alttree methods
 + bool acceptBlock(const CBlockIndex &indexNew BlockValidationState &state);
 + bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state);
-+ bool setState(const uint256 &block, altintegration::ValidationState &state);
++ bool setState(const BlockHash &hash, altintegration::ValidationState &state);
 
 //! mempool methods
 altintegration::PopData getPopData() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -1592,16 +1593,60 @@ vbk/pop_service.cpp
 +    return true;
 + }
 
-+bool setState(const uint256 &block, altintegration::ValidationState &state)
++bool setState(const BlockHash &hash, altintegration::ValidationState &state)
 +    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
 +    AssertLockHeld(cs_main);
 +    return GetPop().altTree->setState(
-+        std::vector<uint8_t>{block.begin(), block.end()}, state);
++        std::vector<uint8_t>{hash.begin(), hash.end()}, state);
 + }
 ```
 Have been updated validation.cpp, init.cpp.
 validation.cpp
 ```diff
+...
+ConnectBlock() {
+...
++    altintegration::ValidationState _state;
++    if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
++        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
++                             REJECT_INVALID, "bad-block-pop",
++                             strprintf("Block %s is POP invalid: %s",
++                                       pindex->GetBlockHash().ToString(),
++                                       _state.toString()));
++    }
+
+    int64_t nTime3 = GetTimeMicros();
+    nTimeConnect += nTime3 - nTime2;
+    LogPrint(BCLog::BENCH,
+             "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) "
+             "[%.2fs (%.2fms/blk)]\n",
+             (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2),
+             MILLI * (nTime3 - nTime2) / block.vtx.size(),
+             nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs - 1),
+             nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
+...
+}
+
+...
+
+UpdateTip() {
+    // New best block
+    g_mempool.AddTransactionsUpdated(1);
+
+    {
+        LOCK(g_best_block_mutex);
+        g_best_block = pindexNew->GetBlockHash();
+        g_best_block_cv.notify_all();
+    }
+
++    altintegration::ValidationState state;
++    bool ret = VeriBlock::setState(pindexNew->GetBlockHash(), state);
++    assert(ret && "block has been checked previously and should be valid");
+...
+}
+
+...
+
 ApplyBlockUndo() {
 ...
 +   altintegration::ValidationState state;
@@ -1693,6 +1738,49 @@ AppInitMain() {
 
     return true;
 }
+
+...
+
+TestBlockValidity() {
+...
+    if (!ContextualCheckBlock(block, state, params.GetConsensus(),
+                              pindexPrev)) {
+        return error("%s: Consensus::ContextualCheckBlock: %s", __func__,
+                     FormatStateMessage(state));
+    }
+
++    // VeriBlock: Block that have been passed to TestBlockValidity may not exist
++    // in alt tree, because technically it was not created ("mined"). in this
++    // case, add it and then remove
++    auto &tree = *VeriBlock::GetPop().altTree;
++    std::vector<uint8_t> _hash{block_hash.begin(), block_hash.end()};
++    bool shouldRemove = false;
++    if (!tree.getBlockIndex(_hash)) {
++        shouldRemove = true;
++        auto containing = VeriBlock::blockToAltBlock(indexDummy);
++        altintegration::ValidationState _state;
++        bool ret = tree.acceptBlockHeader(containing, _state);
++        assert(ret && "alt tree can not accept alt block");
+
++        tree.acceptBlock(_hash, block.popData);
++    }
+
++    auto _f = altintegration::Finalizer([shouldRemove, _hash, &tree]() {
++        if (shouldRemove) {
++            tree.removeSubtree(_hash);
++        }
++    });
+
+    if (!::ChainstateActive().ConnectBlock(block, state, &indexDummy, viewNew,
+                                           params, validationOptions, true)) {
+        return false;
+    }
+
+    assert(state.IsValid());
+    return true;
+}
+
+
 ```
 undo_tests.cpp
 ```diff
