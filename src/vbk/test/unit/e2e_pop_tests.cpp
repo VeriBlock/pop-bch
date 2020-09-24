@@ -18,7 +18,7 @@ using altintegration::PublicationData;
 using altintegration::VbkBlock;
 using altintegration::VTB;
 
-BOOST_AUTO_TEST_SUITE(e2e_poptx_tests)
+BOOST_AUTO_TEST_SUITE(e2e_pop_tests)
 
 BOOST_FIXTURE_TEST_CASE(ValidBlockIsAccepted, E2eFixture) {
     // altintegration and popminer configured to use BTC/VBK/ALT regtest.
