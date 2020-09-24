@@ -647,9 +647,13 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
                 const Consensus::Params &params,
                 BlockValidationOptions validationOptions);
 
+bool ContextualCheckBlock(const CBlock &block, BlockValidationState &state,
+                          const Consensus::Params &params,
+                          const CBlockIndex *pindexPrev, bool fCheckMerkleRoot);
+
 /**
- * This is a variant of ContextualCheckTransaction which computes the contextual
- * check for a transaction based on the chain tip.
+ * This is a variant of ContextualCheckTransaction which computes the
+ * contextual check for a transaction based on the chain tip.
  *
  * See consensus/consensus.h for flag definitions.
  */

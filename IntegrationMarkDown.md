@@ -1,5 +1,5 @@
 # Bitcoin cash markdown
-#### Original Bitcoin cash  building
+## Original Bitcoin cash  building
 First should install missing dependency jemalloc.
 ```sh 
 git clone https://github.com/jemalloc/jemalloc.git
@@ -27,7 +27,7 @@ Run functional tests
 make check-functional
 ```
 
-#### Add VeriBlock-PoP library dependency
+## Add VeriBlock-PoP library dependency
 
 Has been added VeriBlock lib dependency into the CMakeLists.txt
 ```diff
@@ -45,7 +45,7 @@ make
 make install
 ```
 
-#### Adding PopData into the Block
+## Adding PopData into the Block
 I have added a new entity PopData into the CBlock class in the block.h file and provide a new nVersion flag.
 Updated serialisation of the CBlock.
 First has been added POP_BLOCK_VERSION_BIT flag.
@@ -243,7 +243,7 @@ serialization.h
 +    pop_data = altintegration::PopData::fromVbkEncoding(bytes_data);
 + }
 ```
-#### Add PopSecurity fokrpoint parameter
+## Add PopSecurity fokrpoint parameter
 
 Has been added a block heght into the Consensus::Params from which enables PopSecurity, params.h and chainparams.cpp.
 params.h
@@ -313,7 +313,7 @@ static bool ContextualCheckBlockHeader(const CChainParams &params,
     return true;
 }
 ```
-#### Add VeriBlock config
+## Add VeriBlock config
 
 Create two new source files pop_common.hpp, pop_common.cpp
 vbk/pop_common.hpp
@@ -758,7 +758,7 @@ add_library(common
 )
 ```
 
-#### Add PayloadsProvider
+## Add PayloadsProvider
 
 We should add a PayloadsProvider for the veriblock library. The main idea of such class that we will reuse the existing levelev-db database that is used in the original bitcoin cash. Our library allows to use the native realisation of the database. For this purposuses, has been created PayloadsProvider class which is inherited from the [altintegration::PayloadsProvider class](https://veriblock-pop-cpp.netlify.app/structaltintegration_1_1payloadsprovider).
 First should create two new source files payloads_provider.hpp, block_batch_adaptor.hpp
@@ -1354,7 +1354,7 @@ BasicTestingSetup::BasicTestingSetup() {
 }
 ```
 
-#### Add Pop mempool
+## Add Pop mempool
 
 Now we want to add using of the popmempool to the bitcoin cash. For that we should implement few methods for the submitting pop payloads to the mempool, getting payloads during the block mining, and removing payloads after successful block submitting to the blockchain.
 First we should implement such methods in the pop_service.hpp pop_service.cpp source files.
@@ -1455,7 +1455,7 @@ UpdateMempoolForReorg() {
 }
 ```
 
-#### Add VeriBlock AltTree
+## Add VeriBlock AltTree
 
 At this stage we will add functions for the VeriBlock AltTree maintaining such as setState(), acceptBlock(), addAllBlockPayloads().
 vbk/pop_service.hpp
@@ -1786,7 +1786,7 @@ undo_tests.cpp
 + BOOST_FIXTURE_TEST_SUITE(undo_tests, TestingSetup)
 ```
 
-#### Add Unit tests
+## Add Unit tests
 
 At this stage we can test previously added improvements.
 First should add some util test source files like consts.hpp, e2e_fixture.hpp.
@@ -2175,9 +2175,454 @@ BOOST_FIXTURE_TEST_CASE(ValidBlockIsAccepted, E2eFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
+## Update block merkleroot, block size calculating
+
+For the veriblock pop security we should add context info conrainer with the pop related information like block height, keystone array, popData merkle root. The root hash of the context info container should be added to the original block merkle root calculation.
+
+VeriBlock merkle root specific functions have been implemented in the merkle.hpp, merkle.cpp, context_info_container.hpp
+
+vbk/entity/context_info_container.hpp
+```
+#ifndef BITCOIN_SRC_VBK_ENTITY_CONTEXT_INFO_CONTAINER_HPP
+#define BITCOIN_SRC_VBK_ENTITY_CONTEXT_INFO_CONTAINER_HPP
+
+#include <hash.h>
+#include <uint256.h>
+#include <vbk/vbk.hpp>
+
+namespace VeriBlock {
+
+struct ContextInfoContainer {
+    int32_t height{0};
+    KeystoneArray keystones{};
+    uint256 txMerkleRoot{};
+
+    explicit ContextInfoContainer() = default;
+
+    explicit ContextInfoContainer(int height, const KeystoneArray &keystones,
+                                  const uint256 &txMerkleRoot)
+        : height(height), keystones(keystones), txMerkleRoot(txMerkleRoot) {}
+
+    uint256 getUnauthenticatedHash() const {
+        auto unauth = getUnauthenticated();
+        return Hash(unauth.begin(), unauth.end());
+    }
+
+    std::vector<uint8_t> getUnauthenticated() const {
+        std::vector<uint8_t> ret(4, 0);
+
+        // put height
+        int i = 0;
+        ret[i++] = (height & 0xff000000u) >> 24u;
+        ret[i++] = (height & 0x00ff0000u) >> 16u;
+        ret[i++] = (height & 0x0000ff00u) >> 8u;
+        ret[i++] = (height & 0x000000ffu) >> 0u;
+
+        ret.reserve(keystones.size() * 32);
+        for (const uint256 &keystone : keystones) {
+            ret.insert(ret.end(), keystone.begin(), keystone.end());
+        }
+
+        return ret;
+    }
+
+    uint256 getTopLevelMerkleRoot() {
+        auto un = getUnauthenticatedHash();
+        return Hash(txMerkleRoot.begin(), txMerkleRoot.end(), un.begin(),
+                    un.end());
+    }
+
+    std::vector<uint8_t> getAuthenticated() const {
+        auto v = this->getUnauthenticated();
+        v.insert(v.end(), txMerkleRoot.begin(), txMerkleRoot.end());
+        return v;
+    }
+};
+
+} // namespace VeriBlock
+
+#endif
+```
+vbk/merkle.hpp
+```
+#ifndef BITCOIN_SRC_VBK_MERKLE_HPP
+#define BITCOIN_SRC_VBK_MERKLE_HPP
+
+#include <iostream>
+
+#include <chain.h>
+#include <chainparams.h>
+#include <consensus/validation.h>
+#include <primitives/transaction.h>
+
+namespace VeriBlock {
+
+uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
+                           const Consensus::Params &param,
+                           bool *mutated = nullptr);
+
+bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
+                              const Consensus::Params &param,
+                              BlockValidationState &state);
+
+CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block);
+
+} // namespace VeriBlock
+
+#endif
+```
+vbk/merkle.cpp
+```
+#include <consensus/merkle.h>
+#include <hash.h>
+
+#include <vbk/entity/context_info_container.hpp>
+#include <vbk/merkle.hpp>
+#include <vbk/pop_common.hpp>
+
+namespace VeriBlock {
+
+template <typename pop_t>
+void popDataToHash(const std::vector<pop_t> &data,
+                   std::vector<uint256> &leaves) {
+    for (const auto &el : data) {
+        auto id = el.getId();
+        uint256 leaf;
+        std::copy(id.begin(), id.end(), leaf.begin());
+        leaves.push_back(leaf);
+    }
+}
+
+bool isKeystone(const CBlockIndex &block) {
+    auto keystoneInterval =
+        VeriBlock::GetPop().config->alt->getKeystoneInterval();
+    return (block.nHeight % keystoneInterval) == 0;
+}
+
+const CBlockIndex *getPreviousKeystone(const CBlockIndex &block) {
+    const CBlockIndex *pblockWalk = &block;
+
+    do {
+        pblockWalk = pblockWalk->pprev;
+    } while (pblockWalk != nullptr && !isKeystone(*pblockWalk));
+
+    return pblockWalk;
+}
+
+KeystoneArray getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev) {
+    const CBlockIndex *pwalk = pindexPrev;
+
+    KeystoneArray keystones;
+    auto it = keystones.begin();
+    auto end = keystones.end();
+    while (it != end) {
+        if (pwalk == nullptr) {
+            break;
+        }
+
+        if (isKeystone(*pwalk)) {
+            *it = pwalk->GetBlockHash();
+            ++it;
+        }
+
+        pwalk = getPreviousKeystone(*pwalk);
+    }
+
+    return keystones;
+}
+
+int GetPopMerkleRootCommitmentIndex(const CBlock &block) {
+    int commitpos = -1;
+    if (!block.vtx.empty()) {
+        for (size_t o = 0; o < block.vtx[0]->vout.size(); o++) {
+            auto &s = block.vtx[0]->vout[o].scriptPubKey;
+            if (s.size() >= 37 && s[0] == OP_RETURN && s[1] == 0x23 &&
+                s[2] == 0x3a && s[3] == 0xe6 && s[4] == 0xca) {
+                commitpos = o;
+            }
+        }
+    }
+
+    return commitpos;
+}
+
+uint256 BlockPopDataMerkleRoot(const CBlock &block) {
+    std::vector<uint256> leaves;
+
+    popDataToHash(block.popData.context, leaves);
+    popDataToHash(block.popData.vtbs, leaves);
+    popDataToHash(block.popData.atvs, leaves);
+
+    return ComputeMerkleRoot(std::move(leaves), nullptr);
+}
+
+uint256 makeTopLevelRoot(int height, const KeystoneArray &keystones,
+                         const uint256 &txRoot) {
+    ContextInfoContainer context(height, keystones, txRoot);
+    return context.getTopLevelMerkleRoot();
+}
+
+uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
+                           const Consensus::Params &param, bool *mutated) {
+    if (prevIndex == nullptr ||
+        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
+        return BlockMerkleRoot(block);
+    }
+
+    if (prevIndex == nullptr) {
+        // special case: this is genesis block
+        KeystoneArray keystones;
+        return makeTopLevelRoot(0, keystones, BlockMerkleRoot(block, mutated));
+    }
+
+    auto keystones = getKeystoneHashesForTheNextBlock(prevIndex);
+    return makeTopLevelRoot(prevIndex->nHeight + 1, keystones,
+                            BlockMerkleRoot(block, mutated));
+}
+
+bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
+                              const Consensus::Params &param,
+                              BlockValidationState &state) {
+    bool mutated = false;
+    uint256 hashMerkleRoot2 =
+        VeriBlock::TopLevelMerkleRoot(prevIndex, block, param, &mutated);
+
+    if (block.hashMerkleRoot != hashMerkleRoot2) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_MUTATED, REJECT_INVALID,
+            strprintf("hashMerkleRoot mismatch. expected %s, got %s",
+                      hashMerkleRoot2.GetHex(), block.hashMerkleRoot.GetHex()));
+    }
+
+    // Check for merkle tree malleability (CVE-2012-2459): repeating sequences
+    // of transactions in a block without affecting the merkle root of a block,
+    // while still invalidating it.
+    if (mutated) {
+        return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+                             REJECT_INVALID, "bad-txns-duplicate",
+                             "duplicate transaction");
+    }
+
+    if (prevIndex == nullptr ||
+        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
+        return true;
+    }
+
+    // Add PopMerkleRoot commitment validation
+    int commitpos = GetPopMerkleRootCommitmentIndex(block);
+    if (commitpos != -1) {
+        uint256 popMerkleRoot = BlockPopDataMerkleRoot(block);
+        if (!memcpy(popMerkleRoot.begin(),
+                    &block.vtx[0]->vout[commitpos].scriptPubKey[4], 32)) {
+            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+                                 REJECT_INVALID, "bad-pop-tx-root-commitment",
+                                 "pop merkle root mismatch");
+        }
+    } else {
+        // If block is not genesis
+        if (prevIndex != nullptr) {
+            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+                                 REJECT_INVALID, "bad-pop-tx-root-commitment",
+                                 "commitment is missing");
+        }
+    }
+
+    return true;
+}
+
+CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block) {
+    CTxOut out;
+    out.nValue = Amount::zero();
+    out.scriptPubKey.resize(37);
+    out.scriptPubKey[0] = OP_RETURN;
+    out.scriptPubKey[1] = 0x23;
+    out.scriptPubKey[2] = 0x3a;
+    out.scriptPubKey[3] = 0xe6;
+    out.scriptPubKey[4] = 0xca;
+
+    uint256 popMerkleRoot = BlockPopDataMerkleRoot(block);
+    memcpy(&out.scriptPubKey[5], popMerkleRoot.begin(), 32);
+
+    return out;
+}
+
+} // namespace VeriBlock
+```
+
+Next step is to update mining process and validation process with our new rules.
+
+miner.cpp
+```diff
++ #include <vbk/merkle.hpp>
+...
+CreateNewBlock() {
+...
+// Make sure the coinbase is big enough.
+    uint64_t coinbaseSize = ::GetSerializeSize(coinbaseTx, PROTOCOL_VERSION);
+    if (coinbaseSize < MIN_TX_SIZE) {
+        coinbaseTx.vin[0].scriptSig
+            << std::vector<uint8_t>(MIN_TX_SIZE - coinbaseSize - 1);
+    }
+
++    // VeriBlock: add payloads commitment
++    if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
++        CTxOut popOut = VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
++        coinbaseTx.vout.push_back(popOut);
++    }
+...
+}
+
+...
+
+IncrementExtraNonce() {
+...
+    pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
+
++    // VeriBlock
++    pblock->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
++        pindexPrev, *pblock, Params().GetConsensus());
+}
+```
+test/util/mining.cpp
+```diff
++ #include <vbk/merkle.hpp>
+...
+
+PrepareBlock() {
+...
+    LOCK(cs_main);
+    block->nTime = ::ChainActive().Tip()->GetMedianTimePast() + 1;
+
++    // VeriBlock
++    CBlockIndex *tip = ::ChainActive().Tip();
++    assert(tip != nullptr);
++    block->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
++        tip, *block, config.GetChainParams().GetConsensus());
+
+    return block;
+}
+```
+validation.h
+```diff
+...
+bool CheckBlock(const CBlock &block, BlockValidationState &state,
+                const Consensus::Params &params,
+                BlockValidationOptions validationOptions);
+
++ bool ContextualCheckBlock(const CBlock &block, BlockValidationState &state, const Consensus::Params &params, const CBlockIndex *pindexPrev, bool fCheckMerkleRoot);
+...
+```
+
+As veriblock merkleroot algorithm depends on the blockchain, so we should move merkle root validation from the CheckBlock() to the ContextualCheckBlock() function.
+
+validation.cpp
+```diff
++ #include <vbk/merkle.hpp>
+...
+
+ConnectBlock() {
+...
++    // VeriBlock : added ContextualCheckBlock() here becuse merkleRoot
++    // calculation  moved from the CheckBlock() to the ContextualCheckBlock()
+    if (!CheckBlock(block, state, consensusParams,
+                    options.withCheckPoW(!fJustCheck)
+-                    .withCheckMerkleRoot(!fJustCheck)))
++                        .withCheckMerkleRoot(!fJustCheck)) &&
++        !ContextualCheckBlock(block, state, consensusParams, pindex->pprev,
++                              options.withCheckMerkleRoot(!fJustCheck)
++                                  .shouldValidateMerkleRoot())) {
+...
+}
+
+...
+
+CheckBlock() {
+...
+-    // Check the merkle root.
+-    if (validationOptions.shouldValidateMerkleRoot()) {
+-        bool mutated;
+-        uint256 hashMerkleRoot2 = BlockMerkleRoot(block, &mutated);
+-        if (block.hashMerkleRoot != hashMerkleRoot2) {
+-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+-                                 REJECT_INVALID, "bad-txnmrklroot",
+-                                 "hashMerkleRoot mismatch");
+-        }
+
+-        // Check for merkle tree malleability (CVE-2012-2459): repeating
+-        // sequences of transactions in a block without affecting the merkle
+-        // root of a block, while still invalidating it.
+-        if (mutated) {
+-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+-                                 REJECT_INVALID, "bad-txns-duplicate",
+-                                 "duplicate transaction");
+-        }
+-    }
+...
+
+    auto currentBlockSize = ::GetSerializeSize(block, PROTOCOL_VERSION);
++    // VeriBlock
++    if (block.nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
++        currentBlockSize -= ::GetSerializeSize(block.popData, PROTOCOL_VERSION);
++    }
+
+}
+
+...
+
+- static bool ContextualCheckBlock(const CBlock &block,
+-                                 BlockValidationState &state,
+-                                 const Consensus::Params &params,
+-                                 const CBlockIndex *pindexPrev) {
+
++ bool ContextualCheckBlock(const CBlock &block, BlockValidationState &state,
++                          const Consensus::Params &params,
++                          const CBlockIndex *pindexPrev,
++                          bool fCheckMerkleRoot) {
+...
+    // Start enforcing BIP113 (Median Time Past).
+    int nLockTimeFlags = 0;
+    if (nHeight >= params.CSVHeight) {
+        assert(pindexPrev != nullptr);
+        nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
+    }
+
++    // VeriBlock: merkle tree verification is moved from CheckBlock here,
++    // because it requires correct CBlockIndex
++    if (fCheckMerkleRoot && !VeriBlock::VerifyTopLevelMerkleRoot(
++                                block, pindexPrev, params, state)) {
++        // state is already set with error message
++        return false;
++    }
+...
+}
+
+...
+
+AcceptBlock() {
+...
+
+ if (!CheckBlock(block, state, consensusParams,
+                    BlockValidationOptions(config)) ||
+- !ContextualCheckBlock(block, state, consensusParams, pindex->pprev)) {
++        !ContextualCheckBlock(
++            block, state, consensusParams, pindex->pprev,
++            BlockValidationOptions(config).shouldValidateMerkleRoot())) {
+...
+}
+
+...
+
+TestBlockValidity() {
+...
+- if (!ContextualCheckBlock(block, state, params.GetConsensus(), pindexPrev)) {
++    if (!ContextualCheckBlock(block, state, params.GetConsensus(), pindexPrev, validationOptions.shouldValidateMerkleRoot())) {
+...
+}
+
+```
 
 
 
-#### Add VeriBlock specific RPC methods
+## Add VeriBlock specific RPC methods
 
 

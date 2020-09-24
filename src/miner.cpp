@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <vbk/merkle.hpp>
 #include <vbk/pop_service.hpp>
 
 int64_t UpdateTime(CBlockHeader *pblock, const CChainParams &chainParams,
@@ -216,6 +217,12 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     if (coinbaseSize < MIN_TX_SIZE) {
         coinbaseTx.vin[0].scriptSig
             << std::vector<uint8_t>(MIN_TX_SIZE - coinbaseSize - 1);
+    }
+
+    // VeriBlock: add payloads commitment
+    if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
+        CTxOut popOut = VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
+        coinbaseTx.vout.push_back(popOut);
     }
 
     pblocktemplate->entries[0].tx = MakeTransactionRef(coinbaseTx);
@@ -586,5 +593,8 @@ void IncrementExtraNonce(CBlock *pblock, const CBlockIndex *pindexPrev,
     assert(::GetSerializeSize(txCoinbase, PROTOCOL_VERSION) >= MIN_TX_SIZE);
 
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
-    pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
+
+    // VeriBlock
+    pblock->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
+        pindexPrev, *pblock, Params().GetConsensus());
 }

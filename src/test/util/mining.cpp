@@ -13,6 +13,8 @@
 #include <script/standard.h>
 #include <validation.h>
 
+#include <vbk/merkle.hpp>
+
 const std::string ADDRESS_BCHREG_UNSPENDABLE =
     "bchreg:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqha9s37tt";
 
@@ -48,7 +50,12 @@ std::shared_ptr<CBlock> PrepareBlock(const Config &config,
 
     LOCK(cs_main);
     block->nTime = ::ChainActive().Tip()->GetMedianTimePast() + 1;
-    block->hashMerkleRoot = BlockMerkleRoot(*block);
+
+    // VeriBlock
+    CBlockIndex *tip = ::ChainActive().Tip();
+    assert(tip != nullptr);
+    block->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
+        tip, *block, config.GetChainParams().GetConsensus());
 
     return block;
 }

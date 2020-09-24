@@ -52,6 +52,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp> // boost::this_thread::interruption_point() (mingw)
 
+#include <vbk/merkle.hpp>
 #include <vbk/pop_service.hpp>
 
 #include <string>
@@ -1525,9 +1526,15 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     // is enforced in ContextualCheckBlockHeader(); we wouldn't want to
     // re-enforce that rule here (at least until we make it impossible for
     // GetAdjustedTime() to go backward).
+
+    // VeriBlock : added ContextualCheckBlock() here becuse merkleRoot
+    // calculation  moved from the CheckBlock() to the ContextualCheckBlock()
     if (!CheckBlock(block, state, consensusParams,
                     options.withCheckPoW(!fJustCheck)
-                        .withCheckMerkleRoot(!fJustCheck))) {
+                        .withCheckMerkleRoot(!fJustCheck)) &&
+        !ContextualCheckBlock(block, state, consensusParams, pindex->pprev,
+                              options.withCheckMerkleRoot(!fJustCheck)
+                                  .shouldValidateMerkleRoot())) {
         if (state.GetResult() == BlockValidationResult::BLOCK_MUTATED) {
             // We don't write down blocks to disk if they may have been
             // corrupted, so this should be impossible unless we're having
@@ -3585,26 +3592,6 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
                              "POP bit is NOT set, and pop data is NOT empty");
     }
 
-    // Check the merkle root.
-    if (validationOptions.shouldValidateMerkleRoot()) {
-        bool mutated;
-        uint256 hashMerkleRoot2 = BlockMerkleRoot(block, &mutated);
-        if (block.hashMerkleRoot != hashMerkleRoot2) {
-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
-                                 REJECT_INVALID, "bad-txnmrklroot",
-                                 "hashMerkleRoot mismatch");
-        }
-
-        // Check for merkle tree malleability (CVE-2012-2459): repeating
-        // sequences of transactions in a block without affecting the merkle
-        // root of a block, while still invalidating it.
-        if (mutated) {
-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
-                                 REJECT_INVALID, "bad-txns-duplicate",
-                                 "duplicate transaction");
-        }
-    }
-
     // All potential-corruption validation must be done before we do any
     // transaction validation, as otherwise we may mark the header as invalid
     // because we receive the wrong transactions for it.
@@ -3627,6 +3614,12 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
     }
 
     auto currentBlockSize = ::GetSerializeSize(block, PROTOCOL_VERSION);
+
+    // VeriBlock
+    if (block.nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
+        currentBlockSize -= ::GetSerializeSize(block.popData, PROTOCOL_VERSION);
+    }
+
     if (currentBlockSize > nMaxBlockSize) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                              REJECT_INVALID, "bad-blk-length",
@@ -3804,10 +3797,10 @@ bool ContextualCheckTransactionForCurrentBlock(const Consensus::Params &params,
  * in ConnectBlock().
  * Note that -reindex-chainstate skips the validation that happens here!
  */
-static bool ContextualCheckBlock(const CBlock &block,
-                                 BlockValidationState &state,
-                                 const Consensus::Params &params,
-                                 const CBlockIndex *pindexPrev) {
+bool ContextualCheckBlock(const CBlock &block, BlockValidationState &state,
+                          const Consensus::Params &params,
+                          const CBlockIndex *pindexPrev,
+                          bool fCheckMerkleRoot) {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
 
     // Start enforcing BIP113 (Median Time Past).
@@ -3815,6 +3808,14 @@ static bool ContextualCheckBlock(const CBlock &block,
     if (nHeight >= params.CSVHeight) {
         assert(pindexPrev != nullptr);
         nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
+    }
+
+    // VeriBlock: merkle tree verification is moved from CheckBlock here,
+    // because it requires correct CBlockIndex
+    if (fCheckMerkleRoot && !VeriBlock::VerifyTopLevelMerkleRoot(
+                                block, pindexPrev, params, state)) {
+        // state is already set with error message
+        return false;
     }
 
     const int64_t nMedianTimePast =
@@ -4165,7 +4166,9 @@ bool CChainState::AcceptBlock(const Config &config,
 
     if (!CheckBlock(block, state, consensusParams,
                     BlockValidationOptions(config)) ||
-        !ContextualCheckBlock(block, state, consensusParams, pindex->pprev)) {
+        !ContextualCheckBlock(
+            block, state, consensusParams, pindex->pprev,
+            BlockValidationOptions(config).shouldValidateMerkleRoot())) {
         if (state.IsInvalid() &&
             state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
             pindex->nStatus = pindex->nStatus.withFailed();
@@ -4307,8 +4310,8 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
                      FormatStateMessage(state));
     }
 
-    if (!ContextualCheckBlock(block, state, params.GetConsensus(),
-                              pindexPrev)) {
+    if (!ContextualCheckBlock(block, state, params.GetConsensus(), pindexPrev,
+                              validationOptions.shouldValidateMerkleRoot())) {
         return error("%s: Consensus::ContextualCheckBlock: %s", __func__,
                      FormatStateMessage(state));
     }
