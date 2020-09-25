@@ -2621,7 +2621,363 @@ TestBlockValidity() {
 
 ```
 
+The next step is to update current tests and add new veriblock tests.
+Has been disabled validation_block_tests.cpp
+test/validation_block_tests.cpp
+```diff
 
+BOOST_FIXTURE_TEST_SUITE(validation_block_tests, RegTestingSetup)
+
++ // VeriBlock
++ // -t option causes empty cpps to fail, add dummy to prevent this
++ BOOST_AUTO_TEST_CASE(dummy) {}
+
++ // disable test
++ #if 0
+
+...
+
++ #endif
+
+BOOST_AUTO_TEST_SUITE_END()
+```
+Also have been disabled for a while some functional tests.
+../test/functional/test_runner.py
+```diff
+NON_SCRIPTS = [
+    # These are python files that live in the functional tests directory, but
+    # are not test scripts.
+    "combine_logs.py",
+    "create_cache.py",
+    "test_runner.py",
++    # VeriBlock
++    # disable some tests
++    "p2p_compactblocks.py",
++    "feature_block.py",
++    "p2p_sendheaders.py",
++    "rpc_txoutproof.py",
++    "feature_csv_activation.py",
++    "rpc_rawtransaction.py",
++    "feature_bip68_sequence.py",
++    "interface_rest.py",
++    "rpc_blockchain.py",
++     "p2p_invalid_block.py",
++    "p2p_invalid_tx.py",
++    "feature_assumevalid.py",
++    "wallet_importprunedfunds.py",
++     "mining_basic.py",
++    "feature_dersig.py",
++    "feature_cltv.py",
++    "rpc_getblockstats.py",
++    "p2p_fingerprint.py",
++    "p2p_dos_header_tree.py",
++    "p2p_unrequested_blocks.py",
++    # VeriBlock
++    # disable some bitcoin cash tests
++    "abc-invalid-chains.py",
++    "abc-mempool-coherence-on-activations.py",
++    "abc-minimaldata.py",
++    "abc-replay-protection.py",
++    "abc-schnorr.py",
++    "abc-schnorrmultisig.py",
++    "abc-segwit-recovery.py",
++    "abc-sync-chain.py",
++    "abc-transaction-ordering.py",
++    "abc_feature_minerfund.py",
+]
+```
+Have been added new tests: block_validation_tests.cpp, pop_util_tests.cpp, vbk_merkle_tests.cpp.
+
+vbk/test/unit/block_validation_tests.cpp
+```
+#include <boost/test/unit_test.hpp>
+#include <chainparams.h>
+#include <consensus/validation.h>
+#include <test/util/setup_common.h>
+#include <validation.h>
+#include <vbk/pop_service.hpp>
+#include <vbk/test/util/consts.hpp>
+#include <vbk/test/util/e2e_fixture.hpp>
+
+#include <string>
+
+inline std::vector<uint8_t> operator""_v(const char *s, size_t size) {
+    return std::vector<uint8_t>{s, s + size};
+}
+
+BOOST_AUTO_TEST_SUITE(block_validation_tests)
+
+static altintegration::PopData generateRandPopData() {
+    // add PopData
+    auto atvBytes = altintegration::ParseHex(VeriBlockTest::defaultAtvEncoded);
+    auto streamATV = altintegration::ReadStream(atvBytes);
+    auto atv = altintegration::ATV::fromVbkEncoding(streamATV);
+
+    auto vtbBytes = altintegration::ParseHex(VeriBlockTest::defaultVtbEncoded);
+    auto streamVTB = altintegration::ReadStream(vtbBytes);
+    auto vtb = altintegration::VTB::fromVbkEncoding(streamVTB);
+
+    altintegration::PopData popData;
+    popData.atvs = {atv};
+    popData.vtbs = {vtb, vtb, vtb};
+
+    return popData;
+}
+
+BOOST_AUTO_TEST_CASE(GetBlockWeight_test) {
+    // Create random block
+    CBlock block;
+    block.hashMerkleRoot.SetNull();
+    block.hashPrevBlock.SetNull();
+    block.nBits = 10000;
+    block.nNonce = 10000;
+    block.nTime = 10000;
+    int64_t expected_block_weight = ::GetSerializeSize(block, PROTOCOL_VERSION);
+
+    block.nVersion = 1 | VeriBlock::POP_BLOCK_VERSION_BIT;
+
+    BOOST_CHECK(expected_block_weight > 0);
+
+    altintegration::PopData popData = generateRandPopData();
+
+    int64_t popDataWeight = ::GetSerializeSize(popData, PROTOCOL_VERSION);
+
+    BOOST_CHECK(popDataWeight > 0);
+
+    expected_block_weight += popDataWeight;
+
+    // put PopData into block
+    block.popData = popData;
+
+    int64_t new_block_weight = ::GetSerializeSize(block, PROTOCOL_VERSION);
+    BOOST_CHECK_EQUAL(new_block_weight, expected_block_weight);
+}
+
+BOOST_AUTO_TEST_CASE(block_serialization_test) {
+    // Create random block
+    CBlock block;
+    block.hashMerkleRoot.SetNull();
+    block.hashPrevBlock.SetNull();
+    block.nBits = 10000;
+    block.nNonce = 10000;
+    block.nTime = 10000;
+    block.nVersion = 1 | VeriBlock::POP_BLOCK_VERSION_BIT;
+
+    altintegration::PopData popData = generateRandPopData();
+
+    block.popData = popData;
+
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+    BOOST_CHECK(stream.size() == 0);
+    stream << block;
+    BOOST_CHECK(stream.size() != 0);
+
+    CBlock decoded_block;
+    stream >> decoded_block;
+
+    BOOST_CHECK(decoded_block.GetHash() == block.GetHash());
+    BOOST_CHECK(decoded_block.popData == block.popData);
+}
+
+BOOST_AUTO_TEST_CASE(block_network_passing_test) {
+    // Create random block
+    CBlock block;
+    block.hashMerkleRoot.SetNull();
+    block.hashPrevBlock.SetNull();
+    block.nBits = 10000;
+    block.nNonce = 10000;
+    block.nTime = 10000;
+    block.nVersion = 1 | VeriBlock::POP_BLOCK_VERSION_BIT;
+
+    altintegration::PopData popData = generateRandPopData();
+
+    block.popData = popData;
+
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+}
+
+BOOST_FIXTURE_TEST_CASE(BlockPoPVersion_test, E2eFixture) {
+    for (size_t i = 0; i < 400; ++i) {
+        CreateAndProcessBlock({}, cbKey);
+    }
+
+    auto block = CreateAndProcessBlock({}, cbKey);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+```
+vbk/test/unit/pop_util_tests.cpp
+```
+#include <boost/test/unit_test.hpp>
+
+#include <consensus/validation.h>
+#include <script/interpreter.h>
+#include <string>
+#include <test/util/setup_common.h>
+#include <validation.h>
+#include <vbk/bootstraps.hpp>
+#include <vbk/entity/context_info_container.hpp>
+#include <vbk/merkle.hpp>
+#include <vbk/pop_service.hpp>
+#include <vbk/util.hpp>
+
+namespace VeriBlock {
+
+KeystoneArray getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev);
+
+bool isKeystone(const CBlockIndex &block);
+
+const CBlockIndex *getPreviousKeystone(const CBlockIndex &block);
+
+} // namespace VeriBlock
+
+BOOST_AUTO_TEST_SUITE(pop_util_tests)
+
+BOOST_FIXTURE_TEST_CASE(is_keystone, TestingSetup) {
+    CBlockIndex index;
+    index.nHeight = 100; // multiple of 5
+    BOOST_CHECK(VeriBlock::isKeystone(index));
+    index.nHeight = 99; // not multiple of 5
+    BOOST_CHECK(!VeriBlock::isKeystone(index));
+}
+
+BOOST_FIXTURE_TEST_CASE(get_previous_keystone, TestingSetup) {
+    std::vector<CBlockIndex> blocks;
+    blocks.resize(10);
+    blocks[0].pprev = nullptr;
+    blocks[0].nHeight = 0;
+    for (size_t i = 1; i < blocks.size(); i++) {
+        blocks[i].pprev = &blocks[i - 1];
+        blocks[i].nHeight = i;
+    }
+
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[9]) == &blocks[5]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[8]) == &blocks[5]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[7]) == &blocks[5]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[6]) == &blocks[5]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[5]) == &blocks[0]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[4]) == &blocks[0]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[3]) == &blocks[0]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[2]) == &blocks[0]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[1]) == &blocks[0]);
+    BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[0]) == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(make_context_info) {
+    TestChain100Setup blockchain;
+
+    CScript scriptPubKey = CScript()
+                           << ToByteVector(blockchain.coinbaseKey.GetPubKey())
+                           << OP_CHECKSIG;
+    CBlock block = blockchain.CreateAndProcessBlock({}, scriptPubKey);
+
+    LOCK(cs_main);
+
+    CBlockIndex *index = LookupBlockIndex(block.GetHash());
+    BOOST_REQUIRE(index != nullptr);
+
+    uint256 txRoot{};
+    auto keystones = VeriBlock::getKeystoneHashesForTheNextBlock(index->pprev);
+    auto container =
+        VeriBlock::ContextInfoContainer(index->nHeight, keystones, txRoot);
+
+    // TestChain100Setup has blockchain with 100 blocks, new block is 101
+    BOOST_CHECK(container.height == 101);
+    BOOST_CHECK(container.keystones == keystones);
+    BOOST_CHECK(container.getAuthenticated().size() ==
+                container.getUnauthenticated().size() + 32);
+    BOOST_CHECK(container.getUnauthenticated().size() == 4 + 2 * 32);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+```
+vbk/test/unit/vbk_merkle_tests.cpp
+```
+#include <boost/test/unit_test.hpp>
+
+#include <algorithm>
+
+#include <chain.h>
+#include <config.h>
+#include <test/util/setup_common.h>
+#include <validation.h>
+#include <wallet/wallet.h>
+
+#include <vbk/merkle.hpp>
+
+namespace VeriBlock {
+
+int GetPopMerkleRootCommitmentIndex(const CBlock &block);
+
+}
+
+BOOST_AUTO_TEST_SUITE(vbk_merkle_tests)
+
+struct MerkleFixture {
+    // this inits veriblock services
+    TestChain100Setup blockchain;
+};
+
+BOOST_FIXTURE_TEST_CASE(TestChain100Setup_has_valid_merkle_roots,
+                        MerkleFixture) {
+    BlockValidationState state;
+    CBlock block;
+
+    for (int i = 0; i <= 100; i++) {
+        CBlockIndex *index = ChainActive()[i];
+        BOOST_REQUIRE_MESSAGE(index != nullptr,
+                              "can not find block at given height");
+        BOOST_REQUIRE_MESSAGE(
+            ReadBlockFromDisk(block, index, Params().GetConsensus()),
+            "can not read block");
+        BOOST_CHECK_MESSAGE(
+            VeriBlock::VerifyTopLevelMerkleRoot(block, index->pprev,
+                                                Params().GetConsensus(), state),
+            strprintf("merkle root of block %d is invalid, reject reason: %s, "
+                      "debug message: %s",
+                      i, state.GetRejectReason(), state.GetDebugMessage()));
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(addPopTransactionRootIntoCoinbaseCommitment_test,
+                        MerkleFixture) {
+    CScript scriptPubKey = CScript()
+                           << ToByteVector(blockchain.coinbaseKey.GetPubKey())
+                           << OP_CHECKSIG;
+
+    CBlock block = blockchain.CreateAndProcessBlock({}, scriptPubKey);
+    CBlockIndex *index = ChainActive().Tip();
+
+    BlockValidationState state;
+    BOOST_CHECK(VeriBlock::VerifyTopLevelMerkleRoot(
+        block, index->pprev, Params().GetConsensus(), state));
+
+    // change pop merkle root
+    int commitpos = VeriBlock::GetPopMerkleRootCommitmentIndex(block);
+    BOOST_CHECK(commitpos != -1);
+    CMutableTransaction tx(*block.vtx[0]);
+    tx.vout[0].scriptPubKey[4] = 0xff;
+    tx.vout[0].scriptPubKey[5] = 0xff;
+    tx.vout[0].scriptPubKey[6] = 0xff;
+    tx.vout[0].scriptPubKey[7] = 0xff;
+    tx.vout[0].scriptPubKey[8] = 0xff;
+    tx.vout[0].scriptPubKey[9] = 0xff;
+    tx.vout[0].scriptPubKey[10] = 0xff;
+    block.vtx[0] = MakeTransactionRef(tx);
+
+    BOOST_CHECK(!VeriBlock::VerifyTopLevelMerkleRoot(
+        block, index->pprev, Params().GetConsensus(), state));
+
+    // erase commitment
+    tx.vout.erase(tx.vout.begin() + commitpos);
+    block.vtx[0] = MakeTransactionRef(tx);
+
+    BOOST_CHECK(!VeriBlock::VerifyTopLevelMerkleRoot(
+        block, index->pprev, Params().GetConsensus(), state));
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+```
 
 ## Add VeriBlock specific RPC methods
 

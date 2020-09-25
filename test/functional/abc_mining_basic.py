@@ -73,7 +73,7 @@ class AbcMiningRPCTest(BitcoinTestFramework):
             return node.getblock(node.getbestblockhash(), 2)['tx'][0]
 
         coinbase = get_best_coinbase()
-        assert_equal(len(coinbase['vout']), 1)
+        assert_equal(len(coinbase['vout']), 2)
         block_reward = coinbase['vout'][0]['value']
 
         # We don't need to test all fields in getblocktemplate since many of
