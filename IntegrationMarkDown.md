@@ -2369,15 +2369,21 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
         return BlockMerkleRoot(block);
     }
 
+    uint256 txRoot = BlockMerkleRoot(block, mutated);
+    uint256 popRoot = BlockPopDataMerkleRoot(block);
+
     if (prevIndex == nullptr) {
         // special case: this is genesis block
         KeystoneArray keystones;
-        return makeTopLevelRoot(0, keystones, BlockMerkleRoot(block, mutated));
+        return makeTopLevelRoot(
+            0, keystones,
+            Hash(txRoot.begin(), txRoot.end(), popRoot.begin(), popRoot.end()));
     }
 
     auto keystones = getKeystoneHashesForTheNextBlock(prevIndex);
-    return makeTopLevelRoot(prevIndex->nHeight + 1, keystones,
-                            BlockMerkleRoot(block, mutated));
+    return makeTopLevelRoot(
+        prevIndex->nHeight + 1, keystones,
+        Hash(txRoot.begin(), txRoot.end(), popRoot.begin(), popRoot.end()));
 }
 
 bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
