@@ -203,6 +203,9 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
         nFees + GetBlockSubsidy(nHeight, consensusParams);
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
+    // VeriBlock add pop rewards
+    VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev);
+
     const std::vector<CTxDestination> whitelisted =
         GetMinerFundWhitelist(consensusParams, pindexPrev);
     if (!whitelisted.empty()) {
@@ -221,7 +224,8 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
 
     // VeriBlock: add payloads commitment
     if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
-        CTxOut popOut = VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
+        CTxOut popOut =
+            VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
         coinbaseTx.vout.push_back(popOut);
     }
 

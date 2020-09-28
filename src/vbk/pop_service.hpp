@@ -40,6 +40,22 @@ altintegration::PopData getPopData();
 void saveTrees(altintegration::BlockBatchAdaptor &batch);
 bool loadTrees(CDBIterator &iter);
 
+//! pop rewards
+PoPRewards getPopRewards(const CBlockIndex &pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
+                                 const CBlockIndex &pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
+                                   const CBlockIndex &pindexPrev,
+                                   const Consensus::Params &consensusParams,
+                                   Amount &blockReward,
+                                   BlockValidationState &state)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
+                          const Consensus::Params &consensusParams);
+
 //! alttree methods
 bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);

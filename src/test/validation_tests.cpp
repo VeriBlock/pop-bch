@@ -17,6 +17,8 @@
 
 #include <test/util/setup_common.h>
 
+#include <vbk/pop_service.hpp>
+
 #include <boost/signals2/signal.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -28,7 +30,8 @@ BOOST_FIXTURE_TEST_SUITE(validation_tests, TestingSetup)
 
 static void TestBlockSubsidyHalvings(const Consensus::Params &consensusParams) {
     int maxHalvings = 64;
-    Amount nInitialSubsidy = 50 * COIN;
+    Amount nInitialSubsidy =
+        VeriBlock::getCoinbaseSubsidy(50 * COIN, 0, consensusParams);
 
     // for height == 0
     Amount nPreviousSubsidy = 2 * nInitialSubsidy;
@@ -71,7 +74,9 @@ BOOST_AUTO_TEST_CASE(subsidy_limit_test) {
         nSum += 1000 * nSubsidy;
         BOOST_CHECK(MoneyRange(nSum));
     }
+
     BOOST_CHECK_EQUAL(nSum, int64_t(2099999997690000LL) * SATOSHI);
+    // BOOST_CHECK_EQUAL(nSum, int64_t(1259999997480000LL) * SATOSHI);
 }
 
 static CBlock makeLargeDummyBlock(const size_t num_tx) {

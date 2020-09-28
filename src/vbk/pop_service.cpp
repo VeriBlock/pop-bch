@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include <chainparams.h>
 #include <dbwrapper.h>
 #include <shutdown.h>
 #include <txdb.h>
@@ -249,6 +250,160 @@ bool loadTrees(CDBIterator &iter) {
     }
 
     return true;
+}
+
+PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
+    AssertLockHeld(cs_main);
+    auto &param = Params();
+
+    if (param.GetConsensus().VeriBlockPopSecurityHeight >
+        (pindexPrev.nHeight)) {
+        return {};
+    }
+
+    const auto &pop = GetPop();
+    auto &cfg = *pop.config;
+
+    if (pindexPrev.nHeight < (int)cfg.alt->getEndorsementSettlementInterval()) {
+        return {};
+    }
+
+    if (pindexPrev.nHeight < (int)cfg.alt->getPopPayoutDelay()) {
+        return {};
+    }
+
+    altintegration::ValidationState state;
+    auto hash = pindexPrev.GetBlockHash();
+    std::vector<uint8_t> v_hash{hash.begin(), hash.end()};
+
+    bool ret = pop.altTree->setState(v_hash, state);
+    (void)ret;
+    assert(ret);
+
+    auto rewards = pop.altTree->getPopPayout(v_hash);
+    int halving =
+        (pindexPrev.nHeight + 1) / param.GetConsensus().nSubsidyHalvingInterval;
+    PoPRewards btcRewards{};
+    // erase rewards, that pay 0 satoshis and halve rewards
+    for (const auto &r : rewards) {
+        auto rewardValue = r.second;
+        rewardValue >>= halving;
+
+        if ((rewardValue != 0) && (halving < 64)) {
+            CScript key = CScript(r.first.begin(), r.first.end());
+            printf("getPopRewards() key: %s \n", HexStr(key).c_str());
+            btcRewards[key] = param.PopRewardCoefficient() * rewardValue;
+        }
+    }
+
+    return btcRewards;
+}
+
+void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
+                                 const CBlockIndex &pindexPrev) {
+    AssertLockHeld(cs_main);
+    PoPRewards rewards = getPopRewards(pindexPrev);
+
+    assert(coinbaseTx.vout.size() == 1 &&
+           "at this place we should have only PoW payout here");
+
+    for (const auto &itr : rewards) {
+        CTxOut out;
+        out.scriptPubKey = itr.first;
+
+        out.nValue = itr.second * Amount::satoshi();
+        coinbaseTx.vout.push_back(out);
+    }
+}
+
+bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
+                                   const CBlockIndex &pindexPrev,
+                                   const Consensus::Params &consensusParams,
+                                   Amount &blockReward,
+                                   BlockValidationState &state) {
+    AssertLockHeld(cs_main);
+    PoPRewards rewards = getPopRewards(pindexPrev);
+    Amount nTotalPopReward = Amount::zero();
+
+    if (tx.vout.size() < rewards.size()) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+            "bad-pop-vouts-size",
+            strprintf(
+                "checkCoinbaseTxWithPopRewards(): coinbase has incorrect size "
+                "of pop vouts (actual vouts size=%d vs expected vouts=%d)",
+                tx.vout.size(), rewards.size()));
+    }
+
+    std::map<CScript, Amount> cbpayouts;
+    // skip first reward, as it is always PoW payout
+    for (auto out = tx.vout.begin() + 1, end = tx.vout.end(); out != end;
+         ++out) {
+        // pop payouts can not be null
+        if (out->IsNull()) {
+            continue;
+        }
+        cbpayouts[out->scriptPubKey] += out->nValue;
+    }
+
+    // skip first (regular pow) payout, and last 2 0-value payouts
+    for (const auto &payout : rewards) {
+        auto &script = payout.first;
+        Amount expectedAmount = payout.second * Amount::satoshi();
+
+        auto p = cbpayouts.find(script);
+        // coinbase pays correct reward?
+        if (p == cbpayouts.end()) {
+            // we expected payout for that address
+            return state.Invalid(
+                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+                "bad-pop-missing-payout",
+                strprintf("[tx: %s] missing payout for scriptPubKey: '%s' with "
+                          "amount: '%d'",
+                          tx.GetHash().ToString(), HexStr(script),
+                          expectedAmount));
+        }
+
+        // payout found
+        Amount actualAmount{p->second};
+        // does it have correct amount?
+        if (actualAmount != expectedAmount) {
+            return state.Invalid(
+                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+                "bad-pop-wrong-payout",
+                strprintf("[tx: %s] wrong payout for scriptPubKey: '%s'. "
+                          "Expected %d, got %d.",
+                          tx.GetHash().ToString(), HexStr(script),
+                          expectedAmount, actualAmount));
+        }
+
+        nTotalPopReward += expectedAmount;
+    }
+
+    Amount PoWBlockReward =
+        GetBlockSubsidy(pindexPrev.nHeight, consensusParams);
+
+    blockReward = nTotalPopReward + PoWBlockReward + nFees;
+
+    if (tx.GetValueOut() > blockReward) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+            "bad-cb-pop-amount",
+            strprintf("ConnectBlock(): coinbase pays too much (actual=%s vs "
+                      "limit=%s)",
+                      tx.GetValueOut().ToString(), blockReward.ToString()));
+    }
+    return true;
+}
+
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
+                          const Consensus::Params &consensusParams) {
+    if (height >= consensusParams.VeriBlockPopSecurityHeight) {
+        // int64_t powRewardPercentage = 100 - Params().PopRewardPercentage();
+        // subsidy = powRewardPercentage * subsidy;
+        // subsidy = subsidy / 100;
+    }
+    return subsidy;
 }
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {

@@ -789,6 +789,9 @@ Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
     Amount nSubsidy = 50 * COIN;
     // Subsidy is cut in half every 210,000 blocks which will occur
     // approximately every 4 years.
+    nSubsidy =
+        VeriBlock::getCoinbaseSubsidy(nSubsidy, nHeight, consensusParams);
+
     return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
 }
 
@@ -1827,14 +1830,13 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
              nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs - 1),
              nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
-    Amount blockReward =
-        nFees + GetBlockSubsidy(pindex->nHeight, consensusParams);
-    if (block.vtx[0]->GetValueOut() > blockReward) {
-        LogPrintf("ERROR: ConnectBlock(): coinbase pays too much (actual=%d vs "
-                  "limit=%d)\n",
-                  block.vtx[0]->GetValueOut(), blockReward);
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
-                             REJECT_INVALID, "bad-cb-amount");
+    // VeriBlock add pop rewards validation
+    Amount blockReward;
+    assert(pindex->pprev && "previous block ptr is nullptr");
+    if (!VeriBlock::checkCoinbaseTxWithPopRewards(
+            *block.vtx[0], nFees, *pindex->pprev, consensusParams, blockReward,
+            state)) {
+        return false;
     }
 
     const std::vector<CTxDestination> whitelist =
