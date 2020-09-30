@@ -115,6 +115,7 @@ NON_SCRIPTS = [
     "abc-sync-chain.py",
     "abc-transaction-ordering.py",
     "abc_feature_minerfund.py",
+    "abc-finalize-block.py"
 ]
 
 TEST_PARAMS = {

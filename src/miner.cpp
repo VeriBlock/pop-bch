@@ -165,7 +165,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
     // VeriBlock: add PopData into the block
-    if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
+    if (chainParams.isPopEnabled(nHeight)) {
         pblock->popData = VeriBlock::getPopData();
     }
     if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() ||
@@ -223,7 +223,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     }
 
     // VeriBlock: add payloads commitment
-    if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
+    if (chainParams.isPopEnabled(nHeight)) {
         CTxOut popOut =
             VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
         coinbaseTx.vout.push_back(popOut);
@@ -599,6 +599,5 @@ void IncrementExtraNonce(CBlock *pblock, const CBlockIndex *pindexPrev,
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
 
     // VeriBlock
-    pblock->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
-        pindexPrev, *pblock, Params().GetConsensus());
+    pblock->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(pindexPrev, *pblock);
 }

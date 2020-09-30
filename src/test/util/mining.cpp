@@ -54,8 +54,7 @@ std::shared_ptr<CBlock> PrepareBlock(const Config &config,
     // VeriBlock
     CBlockIndex *tip = ::ChainActive().Tip();
     assert(tip != nullptr);
-    block->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(
-        tip, *block, config.GetChainParams().GetConsensus());
+    block->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(tip, *block);
 
     return block;
 }

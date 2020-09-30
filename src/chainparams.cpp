@@ -512,7 +512,7 @@ public:
 
         // VeriBlock
         // TODO: set an VeriBlock pop security fork height
-        consensus.VeriBlockPopSecurityHeight = 1;
+        consensus.VeriBlockPopSecurityHeight = 200;
 
         diskMagic[0] = 0xfa;
         diskMagic[1] = 0xbf;

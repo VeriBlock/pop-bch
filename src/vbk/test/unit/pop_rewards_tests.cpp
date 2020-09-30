@@ -19,9 +19,8 @@ BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
     auto tip = ChainActive().Tip();
     BOOST_CHECK(tip != nullptr);
     std::vector<uint8_t> payoutInfo{scriptPubKey.begin(), scriptPubKey.end()};
-    CBlock block = endorseAltBlockAndMine(tip->GetAncestor(100)->GetBlockHash(),
-                                          ChainActive().Tip()->GetBlockHash(),
-                                          payoutInfo, 0);
+    CBlock block = endorseAltBlockAndMine(tip->GetBlockHash(),
+                                          tip->GetBlockHash(), payoutInfo, 0);
     {
         LOCK(cs_main);
         BOOST_CHECK(ChainActive().Tip()->GetBlockHash() == block.GetHash());
@@ -67,10 +66,11 @@ BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
 
     std::vector<unsigned char> vchSig;
     uint256 hash =
-        SignatureHash(scriptPubKey, spending, 0, SigHashType(), Amount::zero());
+        SignatureHash(scriptPubKey, spending, 0, SigHashType().withForkId(),
+                      payoutBlock.vtx[0]->vout[1].nValue);
 
     BOOST_CHECK(coinbaseKey.SignECDSA(hash, vchSig));
-    vchSig.push_back(uint8_t(SIGHASH_ALL));
+    vchSig.push_back(uint8_t(SIGHASH_ALL | SIGHASH_FORKID));
     spending.vin[0].scriptSig << vchSig;
 
     printf("scriptSig: %s, scriptPubKey: %s \n",

@@ -16,11 +16,9 @@
 namespace VeriBlock {
 
 uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
-                           const Consensus::Params &param,
                            bool *mutated = nullptr);
 
 bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
-                              const Consensus::Params &param,
                               BlockValidationState &state);
 
 CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block);

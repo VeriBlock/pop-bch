@@ -910,6 +910,11 @@ private:
                            const BlockValidationState &state)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex *FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    CBlockIndex *FindBestChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool TestBlockIndex(CBlockIndex *pindexTest)
+        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
     void ReceivedBlockTransactions(const CBlock &block, CBlockIndex *pindexNew,
                                    const FlatFilePos &pos)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);

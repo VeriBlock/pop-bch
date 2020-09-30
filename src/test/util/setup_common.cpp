@@ -211,6 +211,8 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
                             config.GetMaxBlockSize(), extraNonce);
     }
 
+    block.nTime = ::ChainActive().Tip()->nTime + (rand() % 100 + 1);
+
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
     while (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
         ++block.nNonce;

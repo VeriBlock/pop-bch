@@ -30,8 +30,7 @@ BOOST_FIXTURE_TEST_SUITE(validation_tests, TestingSetup)
 
 static void TestBlockSubsidyHalvings(const Consensus::Params &consensusParams) {
     int maxHalvings = 64;
-    Amount nInitialSubsidy =
-        VeriBlock::getCoinbaseSubsidy(50 * COIN, 0, consensusParams);
+    Amount nInitialSubsidy = VeriBlock::getCoinbaseSubsidy(50 * COIN, 0);
 
     // for height == 0
     Amount nPreviousSubsidy = 2 * nInitialSubsidy;

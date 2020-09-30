@@ -93,9 +93,8 @@ uint256 makeTopLevelRoot(int height, const KeystoneArray &keystones,
 }
 
 uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
-                           const Consensus::Params &param, bool *mutated) {
-    if (prevIndex == nullptr ||
-        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
+                           bool *mutated) {
+    if (prevIndex == nullptr || Params().isPopEnabled(prevIndex->nHeight + 1)) {
         return BlockMerkleRoot(block);
     }
 
@@ -117,11 +116,10 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 }
 
 bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
-                              const Consensus::Params &param,
                               BlockValidationState &state) {
     bool mutated = false;
     uint256 hashMerkleRoot2 =
-        VeriBlock::TopLevelMerkleRoot(prevIndex, block, param, &mutated);
+        VeriBlock::TopLevelMerkleRoot(prevIndex, block, &mutated);
 
     if (block.hashMerkleRoot != hashMerkleRoot2) {
         return state.Invalid(
@@ -140,7 +138,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
     }
 
     if (prevIndex == nullptr ||
-        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
+        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
         return true;
     }
 

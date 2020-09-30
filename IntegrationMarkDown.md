@@ -3252,6 +3252,549 @@ ConnectBlock() {
 
 ```
 
+As well has been added tests for the pop rewards.
+vbk/test/util/pop_rewards_tests.cpp
+```
+#include <boost/test/unit_test.hpp>
+#include <script/interpreter.h>
+#include <vbk/test/util/e2e_fixture.hpp>
+
+struct PopRewardsTestFixture : public E2eFixture {};
+
+BOOST_AUTO_TEST_SUITE(pop_rewards_tests)
+
+BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
+                        PopRewardsTestFixture) {
+    CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey())
+                                     << OP_CHECKSIG;
+
+    auto tip = ChainActive().Tip();
+    BOOST_CHECK(tip != nullptr);
+    std::vector<uint8_t> payoutInfo{scriptPubKey.begin(), scriptPubKey.end()};
+    CBlock block = endorseAltBlockAndMine(tip->GetBlockHash(),
+                                          tip->GetBlockHash(), payoutInfo, 0);
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(ChainActive().Tip()->GetBlockHash() == block.GetHash());
+    }
+
+    // Generate a chain whith rewardInterval of blocks
+    int rewardInterval =
+        (int)VeriBlock::GetPop().config->alt->getPopPayoutDelay();
+    // do not add block with rewards
+    // do not add block before block with rewards
+    for (int i = 0; i < (rewardInterval - 2); i++) {
+        CBlock b = CreateAndProcessBlock({}, scriptPubKey);
+    }
+
+    CBlock beforePayoutBlock = CreateAndProcessBlock({}, scriptPubKey);
+
+    int n = 0;
+    for (const auto &out : beforePayoutBlock.vtx[0]->vout) {
+        if (out.nValue > Amount::zero()) n++;
+    }
+    BOOST_CHECK(n == 1);
+
+    CBlock payoutBlock = CreateAndProcessBlock({}, scriptPubKey);
+    n = 0;
+    for (const auto &out : payoutBlock.vtx[0]->vout) {
+        if (out.nValue > Amount::zero()) n++;
+    }
+
+    // we've got additional coinbase out
+    BOOST_CHECK(n > 1);
+
+    // assume POP reward is the output after the POW reward
+    BOOST_CHECK(payoutBlock.vtx[0]->vout[1].scriptPubKey == scriptPubKey);
+    BOOST_CHECK(payoutBlock.vtx[0]->vout[1].nValue > Amount::zero());
+
+    CMutableTransaction spending;
+    spending.nVersion = 1;
+    spending.vin.resize(1);
+    spending.vin[0].prevout = COutPoint(payoutBlock.vtx[0]->GetId(), 1);
+    spending.vout.resize(1);
+    spending.vout[0].nValue = 100 * Amount::satoshi();
+    spending.vout[0].scriptPubKey = scriptPubKey;
+
+    std::vector<unsigned char> vchSig;
+    uint256 hash =
+        SignatureHash(scriptPubKey, spending, 0, SigHashType().withForkId(),
+                      payoutBlock.vtx[0]->vout[1].nValue);
+
+    BOOST_CHECK(coinbaseKey.SignECDSA(hash, vchSig));
+    vchSig.push_back(uint8_t(SIGHASH_ALL | SIGHASH_FORKID));
+    spending.vin[0].scriptSig << vchSig;
+
+    printf("scriptSig: %s, scriptPubKey: %s \n",
+           HexStr(spending.vin[0].scriptSig).c_str(),
+           HexStr(spending.vout[0].scriptPubKey).c_str());
+
+    CBlock spendingBlock;
+    // make sure we cannot spend till coinbase maturity
+    spendingBlock = CreateAndProcessBlock({spending}, scriptPubKey);
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(ChainActive().Tip()->GetBlockHash() !=
+                    spendingBlock.GetHash());
+    }
+
+    for (int i = 0; i < COINBASE_MATURITY; i++) {
+        CBlock b = CreateAndProcessBlock({}, scriptPubKey);
+    }
+
+    spendingBlock = CreateAndProcessBlock({spending}, scriptPubKey);
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(ChainActive().Tip()->GetBlockHash() ==
+                    spendingBlock.GetHash());
+    }
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+```
+test/CMakeLists.txt
+```diff
+        # VeriBlock Tests
+		../vbk/test/unit/e2e_pop_tests.cpp
+		../vbk/test/unit/pop_util_tests.cpp
+		../vbk/test/unit/vbk_merkle_tests.cpp
+		../vbk/test/unit/block_validation_tests.cpp
++		../vbk/test/unit/pop_rewards_tests.cpp  
+```
+
+## Add VeriBlock pop forkresolution
+
+Before we start implementing the pop forkresolution algorithm, we will make a short code refactoring, will create a function in the chainparams which will define if the pop security is enabled.
+chainparams.h
+```diff
+     // VeriBlock
++    bool isPopEnabled(int height) const {
++        return height >= consensus.VeriBlockPopSecurityHeight;
++    }
+     uint32_t PopRewardPercentage() const { return mPopRewardPercentage; }
+     int32_t PopRewardCoefficient() const { return mPopRewardCoefficient; }
+```
+Also has been changed hight of the PoP veriblock security forkpoint in the regtest, it is needed in the tests.
+chainparams.cpp
+```diff
+    // VeriBlock
+    // TODO: set an VeriBlock pop security fork height
+-    consensus.VeriBlockPopSecurityHeight = 200;
++    consensus.VeriBlockPopSecurityHeight = 200;
+```
+Have been updated all places where comparison with the VeriBlockPopSecurityHeight parametr was being used.
+miner.cpp
+```diff
+    // VeriBlock: add PopData into the block
+-   if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
++   if (chainParams.isPopEnabled(nHeight)) {
+        pblock->popData = VeriBlock::getPopData();
+    }
+...
+    // VeriBlock: add payloads commitment
+-   if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
++   if (chainParams.isPopEnabled(nHeight)) {
+        CTxOut popOut =
+            VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
+        coinbaseTx.vout.push_back(popOut);
+    }
+```
+vbk/merkle.hpp
+```diff
+uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
+-                           const Consensus::Params &param,
+                           bool *mutated = nullptr);
+
+bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
+-                              const Consensus::Params &param,
+                              BlockValidationState &state);
+
+```
+vbk/merkle.cpp
+```diff
+uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
+-                           const Consensus::Params &param, bool *mutated) {
+-    if (prevIndex == nullptr ||
+-        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
++                               bool *mutated) {
++    if (prevIndex == nullptr || Params().isPopEnabled(prevIndex->nHeight + 1)) {
+        return BlockMerkleRoot(block);
+    }
+...
+}
+
+...
+
+bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
+-                              const Consensus::Params &param,
+                              BlockValidationState &state) {
+    bool mutated = false;
+    uint256 hashMerkleRoot2 =
+-        VeriBlock::TopLevelMerkleRoot(prevIndex, block, param, &mutated);
++        VeriBlock::TopLevelMerkleRoot(prevIndex, block, &mutated);
+...
+ if (prevIndex == nullptr ||
+-        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
++        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
+        return true;
+    }
+}
+```
+vbk/pop_service.hpp
+```diff
+-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
+-                          const Consensus::Params &consensusParams);
++Amount getCoinbaseSubsidy(Amount subsidy, int32_t height);
+```
+vbk/pop_service.cpp
+```diff
+-    if (param.GetConsensus().VeriBlockPopSecurityHeight >
+-        (pindexPrev.nHeight)) {
++    if (!param.isPopEnabled(pindexPrev.nHeight)) {
+        return {};
+    }
+...
+-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
+-                          const Consensus::Params &consensusParams) {
+-    if (height >= consensusParams.VeriBlockPopSecurityHeight) {
++Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
++    if (Params().isPopEnabled(height)) {
+```
+vbk/test/util/e2e_fixture.hpp
+```diff
+    E2eFixture() {
+        altintegration::SetLogger<TestLogger>();
+        altintegration::GetLogger().level = altintegration::LogLevel::warn;
+
++        CScript scriptPubKey =
++            CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
++        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
++            CBlock b = CreateAndProcessBlock({}, scriptPubKey);
++            m_coinbase_txns.push_back(b.vtx[0]);
++        }
+
+        pop = &VeriBlock::GetPop();
+    }
+```
+
+To fully enable PoP protocol we should also modify forkresolution algorithm. For these purpopses have been added few new function to the pop_service
+vbk/pop_service.hpp
+```diff
++//! pop forkresolution
++CBlockIndex *compareTipToBlock(CBlockIndex *candidate) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
++int compareForks(const CBlockIndex &left, const CBlockIndex &right) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+```
+vbk/pop_service.cpp
+```diff
+CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
+    AssertLockHeld(cs_main);
+    assert(candidate != nullptr &&
+           "block has no according header in block tree");
+
+    auto blockHash = candidate->GetBlockHash();
+    auto *tip = ChainActive().Tip();
+    if (!tip) {
+        // if tip is not set, candidate wins
+        return tip;
+    }
+
+    auto tipHash = tip->GetBlockHash();
+    if (tipHash == blockHash) {
+        // we compare tip with itself
+        return tip;
+    }
+
+    int result = 0;
+    if (Params().isPopEnabled(tip->nHeight)) {
+        result = compareForks(*tip, *candidate);
+    } else {
+        result = CBlockIndexWorkComparator()(tip, candidate) == true ? -1 : 1;
+    }
+
+    if (result < 0) {
+        // candidate has higher POP score
+        return candidate;
+    }
+
+    if (result == 0 && tip->nChainWork < candidate->nChainWork) {
+        // candidate is POP equal to current tip;
+        // candidate has higher chainwork
+        return candidate;
+    }
+
+    // otherwise, current chain wins
+    return tip;
+}
+
+int compareForks(const CBlockIndex &leftForkTip,
+                 const CBlockIndex &rightForkTip) {
+    AssertLockHeld(cs_main);
+
+    auto &pop = GetPop();
+
+    if (&leftForkTip == &rightForkTip) {
+        return 0;
+    }
+
+    auto left = blockToAltBlock(leftForkTip);
+    auto right = blockToAltBlock(rightForkTip);
+    auto state = altintegration::ValidationState();
+
+    if (!pop.altTree->setState(left.hash, state)) {
+        if (!pop.altTree->setState(right.hash, state)) {
+            throw std::logic_error("both chains are invalid");
+        }
+        return -1;
+    }
+
+    return pop.altTree->comparePopScore(left.hash, right.hash);
+}
+```
+
+Also have been added two new functions and updated ActivateBestChain() function in the validation.hpp/cpp source files.
+validation.hpp
+```diff
+
+class CChainState {
+...
+    CBlockIndex *FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
++    CBlockIndex *FindBestChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
++    bool TestBlockIndex(CBlockIndex *pindexTest)
++        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+...
+};
+```
+validation.cpp
+```diff
+bool CChainState::MarkBlockAsFinal(const Config &config,
+                                   BlockValidationState &state,
+                                   const CBlockIndex *pindex) {
+    AssertLockHeld(cs_main);
++    // VeriBlock
++    if (config.GetChainParams().isPopEnabled(pindex->nHeight)) {
++        return true;
++    }
+...
+}
+
+...
+
++CBlockIndex *CChainState::FindBestChain() {
++    AssertLockHeld(cs_main);
++    CBlockIndex *bestCandidate = m_chain.Tip();
+
++    // return early
++    if (setBlockIndexCandidates.empty()) {
++        return nullptr;
++    }
+
++    auto temp_set = setBlockIndexCandidates;
++    for (auto *pindexNew : temp_set) {
++        if (pindexNew == bestCandidate || !TestBlockIndex(pindexNew)) {
++            continue;
++        }
+
++        if (bestCandidate == nullptr) {
++            bestCandidate = pindexNew;
++            continue;
++        }
+
++        int popComparisonResult = 0;
+
++        if (Params().isPopEnabled(bestCandidate->nHeight)) {
++            popComparisonResult =
++                VeriBlock::compareForks(*bestCandidate, *pindexNew);
++        } else {
++            popComparisonResult =
++                CBlockIndexWorkComparator()(bestCandidate, pindexNew) == true
++                    ? -1
++                    : 1;
++        }
++        // even if next candidate is pop equal to current pindexNew, it is
++        // likely to have higher work
++        if (popComparisonResult <= 0) {
++            // candidate is either has POP or WORK better
++            bestCandidate = pindexNew;
++        }
++    }
+
++    // update best header after POP FR
++    pindexBestHeader = bestCandidate;
++    return bestCandidate;
++}
+
++bool CChainState::TestBlockIndex(CBlockIndex *pindexNew) {
++    AssertLockHeld(cs_main);
+
++    const CBlockIndex *pindexFork = m_chain.FindFork(pindexNew);
+
++    // Check whether all blocks on the path between the currently active
++    // chain and the candidate are valid. Just going until the active chain
++    // is an optimization, as we know all blocks in it are valid already.
++    CBlockIndex *pindexTest = pindexNew;
+
++    bool hasValidAncestor = true;
++    while (hasValidAncestor && pindexTest && pindexTest != pindexFork) {
++        assert(pindexTest->HaveTxsDownloaded() || pindexTest->nHeight == 0);
+
++        // If this is a parked chain, but it has enough PoW, clear the park
++        // state.
++        bool fParkedChain = pindexTest->nStatus.isOnParkedChain();
++        if (fParkedChain && gArgs.GetBoolArg("-automaticunparking", true)) {
++            const CBlockIndex *pindexTip = m_chain.Tip();
+
++            // During initialization, pindexTip and/or pindexFork may be
++            // null. In this case, we just ignore the fact that the chain is
++            // parked.
++            if (!pindexTip || !pindexFork) {
++                UnparkBlock(pindexTest);
++                continue;
++            }
+
++            // A parked chain can be unparked if it has twice as much PoW
++            // accumulated as the main chain has since the fork block.
++            CBlockIndex const *pindexExtraPow = pindexTip;
++            arith_uint256 requiredWork = pindexTip->nChainWork;
++            switch (pindexTip->nHeight - pindexFork->nHeight) {
++                // Limit the penality for depth 1, 2 and 3 to half a block
++                // worth of work to ensure we don't fork accidentally.
++                case 3:
++                case 2:
++                    pindexExtraPow = pindexExtraPow->pprev;
++                // FALLTHROUGH
++                case 1: {
++                    const arith_uint256 deltaWork =
++                        pindexExtraPow->nChainWork - pindexFork->nChainWork;
++                    requiredWork += (deltaWork >> 1);
++                    break;
++                }
++                default:
++                    requiredWork +=
++                        pindexExtraPow->nChainWork - pindexFork->nChainWork;
++                    break;
++            }
++
++            if (pindexNew->nChainWork > requiredWork) {
++                // We have enough, clear the parked state.
++                LogPrintf("Unpark chain up to block %s as it has "
++                          "accumulated enough PoW.\n",
++                          pindexNew->GetBlockHash().ToString());
++                fParkedChain = false;
++                UnparkBlock(pindexTest);
++            }
++        }
+
++        // Pruned nodes may have entries in setBlockIndexCandidates for
++        // which block files have been deleted. Remove those as candidates
++        // for the most work chain if we come across them; we can't switch
++        // to a chain unless we have all the non-active-chain parent blocks.
++        bool fInvalidChain = pindexTest->nStatus.isInvalid();
++        bool fMissingData = !pindexTest->nStatus.hasData();
++        if (!(fInvalidChain || fParkedChain || fMissingData)) {
++            // The current block is acceptable, move to the parent, up to
++            // the fork point.
++            pindexTest = pindexTest->pprev;
++            continue;
++        }
+
++        // Candidate chain is not usable (either invalid or parked or
++        // missing data)
++        hasValidAncestor = false;
++        setBlockIndexCandidates.erase(pindexTest);
+
++        if (fInvalidChain &&
++            (pindexBestInvalid == nullptr ||
++             pindexNew->nChainWork > pindexBestInvalid->nChainWork)) {
++            pindexBestInvalid = pindexNew;
++        }
+
++        if (fParkedChain &&
++            (pindexBestParked == nullptr ||
++             pindexNew->nChainWork > pindexBestParked->nChainWork)) {
++            pindexBestParked = pindexNew;
++        }
+
++        LogPrintf("Considered switching to better tip %s but that chain "
++                  "contains a%s%s%s block.\n",
++                  pindexNew->GetBlockHash().ToString(),
++                  fInvalidChain ? "n invalid" : "",
++                  fParkedChain ? " parked" : "",
++                  fMissingData ? " missing-data" : "");
+
++        CBlockIndex *pindexFailed = pindexNew;
++        // Remove the entire chain from the set.
++        while (pindexTest != pindexFailed) {
++            if (fInvalidChain || fParkedChain) {
++                pindexFailed->nStatus =
++                    pindexFailed->nStatus.withFailedParent(fInvalidChain)
++                        .withParkedParent(fParkedChain);
++            } else if (fMissingData) {
++                // If we're missing data, then add back to
++                // mapBlocksUnlinked, so that if the block arrives in the
++                // future we can try adding to setBlockIndexCandidates
++                // again.
++                mapBlocksUnlinked.insert(
++                    std::make_pair(pindexFailed->pprev, pindexFailed));
++            }
++            setBlockIndexCandidates.erase(pindexFailed);
++            pindexFailed = pindexFailed->pprev;
++        }
+
++        if (fInvalidChain || fParkedChain) {
++            // We discovered a new chain tip that is either parked or
++            // invalid, we may want to warn.
++            CheckForkWarningConditionsOnNewFork(pindexNew);
++        }
++    }
+
++    if (g_avalanche &&
++        gArgs.GetBoolArg("-enableavalanche", AVALANCHE_DEFAULT_ENABLED)) {
++        g_avalanche->addBlockToReconcile(pindexNew);
++    }
+
++    return hasValidAncestor;
++}
+
+
+...
+
+ActivateBestChain() {
+...
+                // Destructed before cs_main is unlocked
+                ConnectTrace connectTrace(g_mempool);
+
++                if (pblock && pindexBestChain == nullptr) {
++                    auto *blockindex = LookupBlockIndex(pblock->GetHash());
++                    assert(blockindex);
+
++                    auto tmp_set = setBlockIndexCandidates;
++                    for (auto *candidate : tmp_set) {
++                        // if candidate has txs downloaded & currently arrived
++                        // block is ancestor of `candidate`
++                        if (candidate->HaveTxsDownloaded() &&
++                            TestBlockIndex(candidate) &&
++                            candidate->GetAncestor(blockindex->nHeight) ==
++                                blockindex) {
++                            // then do pop fr with candidate, instead of
++                            // blockindex
++                            pindexMostWork =
++                                VeriBlock::compareTipToBlock(candidate);
++                        }
++                    }
++                }
+
+                if (pindexBestChain == nullptr) {
+-                    pindexMostWork = FindMostWorkChain();
++                    pindexMostWork = FindBestChain();
+                }
+
+...
+
+}
+```
+
 ## Add VeriBlock specific RPC methods
 
 

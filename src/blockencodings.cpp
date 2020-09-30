@@ -221,8 +221,8 @@ bool PartiallyDownloadedBlock::IsTxAvailable(size_t index) const {
 
 ReadStatus PartiallyDownloadedBlock::FillBlock(
     CBlock &block, const std::vector<CTransactionRef> &vtx_missing,
-    const altintegration::PopData &popData) {
-    block.popData = popData;
+    const altintegration::PopData &pop_data) {
+    block.popData = pop_data;
     ReadStatus status = FillBlock(block, vtx_missing);
     return status;
 }

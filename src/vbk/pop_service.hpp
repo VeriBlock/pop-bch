@@ -53,8 +53,13 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
                                    BlockValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
-                          const Consensus::Params &consensusParams);
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height);
+
+//! pop forkresolution
+CBlockIndex *compareTipToBlock(CBlockIndex *candidate)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+int compareForks(const CBlockIndex &left, const CBlockIndex &right)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 //! alttree methods
 bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state)

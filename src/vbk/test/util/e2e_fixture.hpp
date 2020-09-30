@@ -51,6 +51,14 @@ struct E2eFixture : public TestChain100Setup {
         altintegration::SetLogger<TestLogger>();
         altintegration::GetLogger().level = altintegration::LogLevel::warn;
 
+        CScript scriptPubKey =
+            CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
+        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
+            CBlock b = CreateAndProcessBlock({}, scriptPubKey);
+            m_coinbase_txns.push_back(b.vtx[0]);
+        }
+
         pop = &VeriBlock::GetPop();
     }
 
@@ -136,13 +144,11 @@ struct E2eFixture : public TestChain100Setup {
         auto &pop_mempool = *pop->mempool;
 
         for (const auto &vtb : vtbs) {
-            BOOST_CHECK_MESSAGE(pop_mempool.submit(vtb, state_),
-                                state_.toString());
+            pop_mempool.submit(vtb, state_);
         }
 
         for (const auto &atv : atvs) {
-            BOOST_CHECK_MESSAGE(pop_mempool.submit(atv, state_),
-                                state_.toString());
+            pop_mempool.submit(atv, state_);
         }
 
         return CreateAndProcessBlock({}, cbKey);

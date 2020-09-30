@@ -256,8 +256,7 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
     AssertLockHeld(cs_main);
     auto &param = Params();
 
-    if (param.GetConsensus().VeriBlockPopSecurityHeight >
-        (pindexPrev.nHeight)) {
+    if (!param.isPopEnabled(pindexPrev.nHeight)) {
         return {};
     }
 
@@ -396,14 +395,77 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
     return true;
 }
 
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
-                          const Consensus::Params &consensusParams) {
-    if (height >= consensusParams.VeriBlockPopSecurityHeight) {
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
+    if (Params().isPopEnabled(height)) {
         // int64_t powRewardPercentage = 100 - Params().PopRewardPercentage();
         // subsidy = powRewardPercentage * subsidy;
         // subsidy = subsidy / 100;
     }
     return subsidy;
+}
+
+CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
+    AssertLockHeld(cs_main);
+    assert(candidate != nullptr &&
+           "block has no according header in block tree");
+
+    auto blockHash = candidate->GetBlockHash();
+    auto *tip = ChainActive().Tip();
+    if (!tip) {
+        // if tip is not set, candidate wins
+        return tip;
+    }
+
+    auto tipHash = tip->GetBlockHash();
+    if (tipHash == blockHash) {
+        // we compare tip with itself
+        return tip;
+    }
+
+    int result = 0;
+    if (Params().isPopEnabled(tip->nHeight)) {
+        result = compareForks(*tip, *candidate);
+    } else {
+        result = CBlockIndexWorkComparator()(tip, candidate) == true ? -1 : 1;
+    }
+
+    if (result < 0) {
+        // candidate has higher POP score
+        return candidate;
+    }
+
+    if (result == 0 && tip->nChainWork < candidate->nChainWork) {
+        // candidate is POP equal to current tip;
+        // candidate has higher chainwork
+        return candidate;
+    }
+
+    // otherwise, current chain wins
+    return tip;
+}
+
+int compareForks(const CBlockIndex &leftForkTip,
+                 const CBlockIndex &rightForkTip) {
+    AssertLockHeld(cs_main);
+
+    auto &pop = GetPop();
+
+    if (&leftForkTip == &rightForkTip) {
+        return 0;
+    }
+
+    auto left = blockToAltBlock(leftForkTip);
+    auto right = blockToAltBlock(rightForkTip);
+    auto state = altintegration::ValidationState();
+
+    if (!pop.altTree->setState(left.hash, state)) {
+        if (!pop.altTree->setState(right.hash, state)) {
+            throw std::logic_error("both chains are invalid");
+        }
+        return -1;
+    }
+
+    return pop.altTree->comparePopScore(left.hash, right.hash);
 }
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
