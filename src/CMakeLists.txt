@@ -484,6 +484,7 @@ endif()
 # Bitcoin server facilities
 add_library(server
 	vbk/pop_service.cpp
+	vbk/rpc_register.cpp
 	addrdb.cpp
 	addrman.cpp
 	avalanche/peermanager.cpp

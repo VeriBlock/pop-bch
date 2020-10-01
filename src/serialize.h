@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "vbk/adaptors/univalue_json.hpp"
 #include "veriblock/entities/altblock.hpp"
 #include "veriblock/entities/popdata.hpp"
 

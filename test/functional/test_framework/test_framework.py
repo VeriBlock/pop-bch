@@ -18,6 +18,7 @@ import time
 
 from .authproxy import JSONRPCException
 from . import coverage
+from .pop import sync_pop_mempools, sync_pop_tips, assert_pop_state_equal
 from .test_node import TestNode
 from .mininode import NetworkThread
 from .util import (
@@ -473,9 +474,17 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def sync_mempools(self, nodes=None, **kwargs):
         sync_mempools(nodes or self.nodes, **kwargs)
 
+    def sync_pop_mempools(self, nodes=None, **kwargs):
+        sync_pop_mempools(nodes or self.nodes, **kwargs)
+
+    def sync_pop_tips(self, nodes=None, **kwargs):
+        sync_pop_tips(nodes or self.nodes, **kwargs)
+
     def sync_all(self, nodes=None, **kwargs):
         self.sync_blocks(nodes, **kwargs)
         self.sync_mempools(nodes, **kwargs)
+        self.sync_pop_mempools(nodes, **kwargs)
+        self.sync_pop_tips(nodes, **kwargs)
 
     # Private helper methods. These should not be accessed by the subclass
     # test scripts.
@@ -617,6 +626,13 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             import zmq  # noqa
         except ImportError:
             raise SkipTest("python3-zmq module not available.")
+    
+    def skip_if_no_pypopminer(self):
+        """Attempt to import the pypopminer package and skip the test if the import fails."""
+        try:
+            import pypopminer  # noqa
+        except ImportError:
+            raise SkipTest("pypopminer module not available.")
 
     def skip_if_no_bitcoind_zmq(self):
         """Skip the running test if bitcoind has not been compiled with zmq support."""

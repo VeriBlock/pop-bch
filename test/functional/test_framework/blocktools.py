@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Utilities for manipulating blocks and transactions."""
 
+from .pop import ContextInfoContainer
 from .script import (
     CScript,
     OP_CHECKSIG,
@@ -25,14 +26,19 @@ from .messages import (
     ser_string,
 )
 from .txtools import pad_tx
+from .test_node import TestNode
 from .util import assert_equal, satoshi_round
+from .pop_const import POW_PAYOUT
 
 # Genesis block time (regtest)
 TIME_GENESIS_BLOCK = 1296688602
 
 
-def create_block(hashprev, coinbase, ntime=None, *, version=1):
+def create_block(node, hashprev, coinbase, ntime=None, *, version=1, prevheight = None):
     """Create a block (with regtest difficulty)."""
+    assert isinstance(node, TestNode)
+    assert isinstance(hashprev, int)
+
     block = CBlock()
     block.nVersion = version
     if ntime is None:
@@ -44,7 +50,11 @@ def create_block(hashprev, coinbase, ntime=None, *, version=1):
     # difficulty retargeting is disabled in REGTEST chainparams
     block.nBits = 0x207fffff
     block.vtx.append(coinbase)
-    block.hashMerkleRoot = block.calc_merkle_root()
+    
+    #block.hashMerkleRoot = block.calc_merkle_root()
+    block.contextinfo = ContextInfoContainer.create(node, hashprev, prevheight)
+    block.hashMerkleRoot = block.get_top_level_merkle_root()
+
     block.calc_sha256()
     return block
 
@@ -88,7 +98,14 @@ def create_coinbase(height, pubkey=None):
         coinbaseoutput.scriptPubKey = CScript([pubkey, OP_CHECKSIG])
     else:
         coinbaseoutput.scriptPubKey = CScript([OP_TRUE])
-    coinbase.vout = [coinbaseoutput]
+    
+    popout = CTxOut()
+    popout.nValue = 0
+    popout.scriptPubKey = CScript([OP_RETURN, b'\x3a\xe6\xca' + b'\x00' * 32])
+    assert len(popout.scriptPubKey) == 37, "len(script)={}\nscript:{}".format(len(popout.scriptPubKey), popout.scriptPubKey.hex())
+    # popMerkleRoot is assumed to be 32 zeroes (no pop txes in a block)
+    
+    coinbase.vout = [coinbaseoutput, popout]
 
     # Make sure the coinbase is at least 100 bytes
     pad_tx(coinbase)

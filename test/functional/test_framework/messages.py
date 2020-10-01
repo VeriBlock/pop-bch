@@ -27,6 +27,7 @@ import socket
 import struct
 import time
 
+from test_framework.pop_const import POP_BLOCK_VERSION_BIT
 from test_framework.siphash import siphash256
 from test_framework.util import hex_str_to_bytes
 
@@ -506,11 +507,12 @@ class CBlockHeader:
 
 
 class CBlock(CBlockHeader):
-    __slots__ = ("vtx",)
+    __slots__ = ("vtx", "contextinfo")
 
     def __init__(self, header=None):
         super(CBlock, self).__init__(header)
         self.vtx = []
+        self.contextinfo = None
 
     def deserialize(self, f):
         super(CBlock, self).deserialize(f)
@@ -531,6 +533,10 @@ class CBlock(CBlockHeader):
                 newhashes.append(hash256(hashes[i] + hashes[i2]))
             hashes = newhashes
         return uint256_from_str(hashes[0])
+
+    def get_top_level_merkle_root(self):
+        self.contextinfo.setTxRootInt(self.calc_merkle_root())
+        return self.contextinfo.getTopLevelMerkleRoot()
 
     def calc_merkle_root(self):
         hashes = []
@@ -590,7 +596,7 @@ class PrefilledTransaction:
 # This is what we send on the wire, in a cmpctblock message.
 class P2PHeaderAndShortIDs:
     __slots__ = ("header", "nonce", "prefilled_txn", "prefilled_txn_length",
-                 "shortids", "shortids_length")
+                 "shortids", "shortids_length", "popdata")
 
     def __init__(self):
         self.header = CBlockHeader()
@@ -599,6 +605,7 @@ class P2PHeaderAndShortIDs:
         self.shortids = []
         self.prefilled_txn_length = 0
         self.prefilled_txn = []
+        self.popdata = None
 
     def deserialize(self, f):
         self.header.deserialize(f)
@@ -609,6 +616,10 @@ class P2PHeaderAndShortIDs:
             # two zero bytes and read it in as an 8-byte number
             self.shortids.append(
                 struct.unpack("<Q", f.read(6) + b'\x00\x00')[0])
+
+        if self.header.nVersion & POP_BLOCK_VERSION_BIT:
+            assert False, "Deserialization of PopData is not implemented"
+
         self.prefilled_txn = deser_vector(f, PrefilledTransaction)
         self.prefilled_txn_length = len(self.prefilled_txn)
 
@@ -620,6 +631,10 @@ class P2PHeaderAndShortIDs:
         for x in self.shortids:
             # We only want the first 6 bytes
             r += struct.pack("<Q", x)[0:6]
+
+        if self.header.nVersion & POP_BLOCK_VERSION_BIT:
+            assert False, "Serialization of PopData is not implemented"
+
         r += ser_vector(self.prefilled_txn)
         return r
 
@@ -1474,3 +1489,160 @@ class msg_tcpavaresponse():
 
     def __repr__(self):
         return "msg_tcpavaresponse(response={})".format(repr(self.response))
+
+
+
+#VeriBlock messages
+
+class msg_offer_atv:
+    __slots__ = ("atv_ids",)
+    command = b"ofATV"
+
+    def __init__(self, atv_ids = None):
+        self.atv_ids = atv_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.atv_ids])
+
+    def __repr__(self):
+        return "msg_offer_atv()"
+
+class msg_offer_vtb:
+    __slots__ = ("vtb_ids",)
+    command = b"ofVTB"
+
+    def __init__(self, vtb_ids = None):
+        self.vtb_ids = vtb_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.vtb_ids])
+
+    def __repr__(self):
+        return "msg_offer_vtb()"
+
+class msg_offer_vbk:
+    __slots__ = ("vbk_ids",)
+    command = b"ofVBK"
+
+    def __init__(self, vbk_ids = None):
+        self.vbk_ids = vbk_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.vbk_ids])
+
+    def __repr__(self):
+        return "msg_offer_vbk()"
+
+class msg_atv:
+    __slots__ = ("atv",)
+    command = b'ATV'
+
+    def __init__(self, atv = None):
+        self.atv = atv
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        b = bytes.fromhex(self.atv)
+        r = ser_compact_size(len(b))
+        r += b
+        return r
+
+    def __repr__(self):
+        return "msg_offer_atv()"
+
+class msg_vtb:
+    __slots__ = ("vtb",)
+    command = b'VTB'
+
+    def __init__(self, vtb = None):
+        self.vtb = vtb
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        b = bytes.fromhex(self.vtb)
+        r = ser_compact_size(len(b))
+        r += b
+        return r
+
+    def __repr__(self):
+        return "msg_offer_vtb()"
+
+class msg_vbk:
+    __slots__ = ("vbk",)
+    command = b'VBK'
+
+    def __init__(self, vbk = None):
+        self.vbk = vbk
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        b = bytes.fromhex(self.vbk)
+        r = ser_compact_size(len(b))
+        r += b
+        return r
+
+    def __repr__(self):
+        return "msg_offer_vbk()"
+
+class msg_get_atv:
+    __slots__ = ("atv_ids",)
+    command = b'gATV'
+
+    def __init__(self, atv_ids = None):
+        self.atv_ids = atv_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.atv_ids])
+
+    def __repr__(self):
+        return "msg_get_atv()"
+
+class msg_get_vtb:
+    __slots__ = ("vtb_ids",)
+    command = b'gVTB'
+
+    def __init__(self, vtb_ids = None):
+        self.vtb_ids = vtb_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.vtb_ids])
+
+    def __repr__(self):
+        return "msg_get_vtb()"
+
+class msg_get_vbk:
+    __slots__ = ("vbk_ids",)
+    command = b'gVBK'
+
+    def __init__(self, vbk_ids = None):
+        self.vbk_ids = vbk_ids
+
+    def deserialize(self, f):
+        pass
+
+    def serialize(self):
+        return ser_string_vector([bytes.fromhex(x) for x in self.vbk_ids])
+
+    def __repr__(self):
+        return "msg_get_vbk()"

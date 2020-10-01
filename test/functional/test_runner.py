@@ -92,7 +92,7 @@ NON_SCRIPTS = [
     "feature_bip68_sequence.py",
     "interface_rest.py",
     "rpc_blockchain.py",
-     "p2p_invalid_block.py",
+    "p2p_invalid_block.py",
     "p2p_invalid_tx.py",
     "feature_assumevalid.py",
     "wallet_importprunedfunds.py",
