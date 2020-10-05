@@ -2537,12 +2537,18 @@ CBlockIndex *CChainState::FindBestChain() {
 
     auto temp_set = setBlockIndexCandidates;
     for (auto *pindexNew : temp_set) {
+        LogPrintf("VeriBlock FindBestChain pindexNew: %s \n",
+                  pindexNew->GetBlockHash().GetHex());
         if (pindexNew == bestCandidate || !TestBlockIndex(pindexNew)) {
+            LogPrintf("VeriBlock here 1 FindBestChain pindexNew: %s \n",
+                      pindexNew->GetBlockHash().GetHex());
             continue;
         }
 
         if (bestCandidate == nullptr) {
             bestCandidate = pindexNew;
+            LogPrintf("VeriBlock here 2 FindBestChain pindexNew: %s \n",
+                      pindexNew->GetBlockHash().GetHex());
             continue;
         }
 
@@ -2551,11 +2557,18 @@ CBlockIndex *CChainState::FindBestChain() {
         if (Params().isPopEnabled(bestCandidate->nHeight)) {
             popComparisonResult =
                 VeriBlock::compareForks(*bestCandidate, *pindexNew);
+            LogPrintf(
+                "VeriBlock here 3 FindBestChain popComparisonResult: %d \n",
+                popComparisonResult);
         } else {
             popComparisonResult =
                 CBlockIndexWorkComparator()(bestCandidate, pindexNew) == true
                     ? -1
                     : 1;
+
+            LogPrintf(
+                "VeriBlock here 4 FindBestChain popComparisonResult: %d \n",
+                popComparisonResult);
         }
         // even if next candidate is pop equal to current pindexNew, it is
         // likely to have higher work
@@ -2567,6 +2580,9 @@ CBlockIndex *CChainState::FindBestChain() {
 
     // update best header after POP FR
     pindexBestHeader = bestCandidate;
+
+    LogPrintf("VeriBlock FindBestChain bestCandidate: %s \n",
+              bestCandidate->GetBlockHash().GetHex());
     return bestCandidate;
 }
 
@@ -2919,6 +2935,8 @@ bool CChainState::ActivateBestChain(const Config &config,
                 if (pblock && pindexBestChain == nullptr) {
                     auto *blockindex = LookupBlockIndex(pblock->GetHash());
                     assert(blockindex);
+                    LogPrintf("VeriBlock ActivateBestChain block hash: %s \n",
+                              pblock->GetHash().GetHex());
 
                     auto tmp_set = setBlockIndexCandidates;
                     for (auto *candidate : tmp_set) {
@@ -2939,6 +2957,9 @@ bool CChainState::ActivateBestChain(const Config &config,
                 if (pindexBestChain == nullptr) {
                     pindexBestChain = FindBestChain();
                 }
+
+                LogPrintf("VeriBlock ActivateBestChain pindexBestChain: %s \n",
+                          pindexBestChain->GetBlockHash().GetHex());
 
                 // Whether we have anything to do at all.
                 if (pindexBestChain == nullptr ||
@@ -4273,15 +4294,17 @@ bool CChainState::AcceptBlock(const Config &config,
     // later, during FindMostWorkChain. We mark the block as parked at the very
     // last minute so we can make sure everything is ready to be reorged if
     // needed.
-    if (gArgs.GetBoolArg("-parkdeepreorg", true)) {
-        const CBlockIndex *pindexFork = m_chain.FindFork(pindex);
-        if (pindexFork && pindexFork->nHeight + 1 < m_chain.Height()) {
-            LogPrintf("Park block %s as it would cause a deep reorg.\n",
-                      pindex->GetBlockHash().ToString());
-            pindex->nStatus = pindex->nStatus.withParked();
-            setDirtyBlockIndex.insert(pindex);
-        }
-    }
+
+    // VeriBlock
+    // if (gArgs.GetBoolArg("-parkdeepreorg", true)) {
+    //     const CBlockIndex *pindexFork = m_chain.FindFork(pindex);
+    //     if (pindexFork && pindexFork->nHeight + 1 < m_chain.Height()) {
+    //         LogPrintf("Park block %s as it would cause a deep reorg.\n",
+    //                   pindex->GetBlockHash().ToString());
+    //         pindex->nStatus = pindex->nStatus.withParked();
+    //         setDirtyBlockIndex.insert(pindex);
+    //     }
+    // }
 
     // Header is valid/has work and the merkle tree is good.
     // Relay now, but if it does not build on our best tip, let the

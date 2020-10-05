@@ -4656,7 +4656,6 @@ test/CMakeLists.txt
 		../vbk/test/unit/pop_rewards_tests.cpp
 		../vbk/test/unit/pop_forkresolution_tests.cpp
 +   	../vbk/test/unit/rpc_service_tests.cpp
-
 ```
 
 

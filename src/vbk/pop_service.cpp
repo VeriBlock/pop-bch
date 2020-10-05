@@ -13,6 +13,7 @@
 
 #include <vbk/adaptors/block_batch_adaptor.hpp>
 #include <vbk/adaptors/payloads_provider.hpp>
+#include <vbk/p2p_sync.hpp>
 #include <vbk/pop_common.hpp>
 #include <vbk/pop_service.hpp>
 
@@ -141,6 +142,14 @@ void SetPop(CDBWrapper &db) {
     payloads = std::make_shared<PayloadsProvider>(db);
     std::shared_ptr<altintegration::PayloadsProvider> dbrepo = payloads;
     SetPop(dbrepo);
+
+    auto &app = GetPop();
+    app.mempool->onAccepted<altintegration::ATV>(
+        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::ATV>);
+    app.mempool->onAccepted<altintegration::VTB>(
+        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VTB>);
+    app.mempool->onAccepted<altintegration::VbkBlock>(
+        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
 }
 
 PayloadsProvider &GetPayloadsProvider() {

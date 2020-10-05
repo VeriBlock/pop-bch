@@ -34,6 +34,8 @@
 
 #include <memory>
 
+#include <vbk/p2p_sync.hpp>
+
 #if defined(NDEBUG)
 #error "Bitcoin cannot be compiled without assertions."
 #endif
@@ -982,6 +984,7 @@ void PeerLogicValidation::FinalizeNode(const Config &config, NodeId nodeid,
     assert(g_outbound_peers_with_protect_from_disconnect >= 0);
 
     mapNodeState.erase(nodeid);
+    VeriBlock::p2p::erasePopDataNodeState(nodeid);
 
     if (mapNodeState.empty()) {
         // Do a consistency check after the last peer is removed.
@@ -2067,8 +2070,10 @@ static bool ProcessHeadersMessage(const Config &config, CNode *pfrom,
         bool fCanDirectFetch = CanDirectFetch(chainparams.GetConsensus());
         // If this set of headers is valid and ends in a block with at least as
         // much work as our tip, download as much as possible.
-        if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE) &&
-            ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork) {
+        if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE)
+            // VeriBlock: download the chain suggested by the peer
+            /* && ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork */
+        ) {
             std::vector<const CBlockIndex *> vToFetch;
             const CBlockIndex *pindexWalk = pindexLast;
             // Calculate all the blocks we'd need to switch to pindexLast, up to
@@ -2260,6 +2265,13 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
         GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0) {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
         return true;
+    }
+
+    // VeriBlock
+    int pop_res =
+        VeriBlock::p2p::processPopData(pfrom, strCommand, vRecv, connman);
+    if (pop_res != -1) {
+        return pop_res;
     }
 
     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
@@ -4880,6 +4892,16 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
     }
     if (!vInv.empty()) {
         connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
+    }
+
+    // VeriBlock offer Pop Data
+    {
+        VeriBlock::p2p::offerPopData<altintegration::ATV>(pto, connman,
+                                                          msgMaker);
+        VeriBlock::p2p::offerPopData<altintegration::VTB>(pto, connman,
+                                                          msgMaker);
+        VeriBlock::p2p::offerPopData<altintegration::VbkBlock>(pto, connman,
+                                                               msgMaker);
     }
 
     // Detect whether we're stalling

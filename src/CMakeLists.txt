@@ -485,6 +485,7 @@ endif()
 add_library(server
 	vbk/pop_service.cpp
 	vbk/rpc_register.cpp
+	vbk/p2p_sync.cpp
 	addrdb.cpp
 	addrman.cpp
 	avalanche/peermanager.cpp

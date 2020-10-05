@@ -14,7 +14,7 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
 )
-from test_framework.pop_const import NETWORK_ID
+from test_framework.pop_const import NETWORK_ID, POP_SECURITY_FORK_POINT
 
 import time
 
@@ -58,10 +58,10 @@ class PopE2E(BitcoinTestFramework):
 
         self.nodes[0].generate(nblocks=10)
 
-        self.log.info("endorse 5 alt block")    
+        self.log.info("endorse {} alt block".format(POP_SECURITY_FORK_POINT + 5))    
         p = PublicationData()
         p.identifier = NETWORK_ID
-        p.header = self.nodes[0].getpopdata(5)['block_header']
+        p.header = self.nodes[0].getpopdata(POP_SECURITY_FORK_POINT + 5)['block_header']
         p.payoutInfo = "0014aaddff"
 
         pop_data = self.apm.endorseAltBlock(p, vbk_blocks[0].getHash())
@@ -78,7 +78,9 @@ class PopE2E(BitcoinTestFramework):
         containingblock = self.nodes[0].generate(nblocks=1)
         containingblock = self.nodes[0].getblock(containingblock[0])
 
-        print(containingblock)
+        print(len(containingblock['pop']['data']['vbkblocks']))
+        print(vbk_blocks_amount)
+        print(vtbs_amount)
         assert len(containingblock['pop']['data']['vtbs']) == vtbs_amount
         assert len(containingblock['pop']['data']['vbkblocks']) == vbk_blocks_amount + vtbs_amount + 1
 
@@ -115,6 +117,7 @@ class PopE2E(BitcoinTestFramework):
         """Main test logic"""
 
         self.sync_all(self.nodes)
+        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
 
         from pypopminer import MockMiner
 
