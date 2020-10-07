@@ -38,6 +38,7 @@ class PopFr(BitcoinTestFramework):
         self.extra_args = [x + ['-debug=cmpctblock'] for x in self.extra_args]
 
     def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
         self.skip_if_no_pypopminer()
 
     def setup_network(self):
@@ -105,7 +106,6 @@ class PopFr(BitcoinTestFramework):
         self.log.info("node0 mines 10 more blocks")
         self.sync_all(self.nodes[0:1])
         containingblock = self.nodes[0].getblock(containinghash[0])
-        print(bestblocks)
         assert_equal(self.nodes[1].getblock(containinghash[0])['hash'], containingblock['hash'])
 
         tip = self.get_best_block(self.nodes[0])
@@ -166,7 +166,7 @@ class PopFr(BitcoinTestFramework):
         # all nodes have different tips at height 223
         bestblocks = [self.get_best_block(x) for x in self.nodes]
         for b in bestblocks:
-            assert b['height'] == 223
+            assert b['height'] == POP_SECURITY_FORK_POINT + 223
         assert len(set([x['hash'] for x in bestblocks])) == len(bestblocks)
         self.log.info("all nodes have different tips")
 
@@ -176,8 +176,8 @@ class PopFr(BitcoinTestFramework):
                 connect_nodes(node, self.nodes[i])
 
         self.log.info("all nodes connected")
-        self.sync_blocks(self.nodes, timeout=60)
-        self.sync_pop_tips(self.nodes, timeout=60)
+        self.sync_blocks(self.nodes, timeout=120)
+        self.sync_pop_tips(self.nodes, timeout=120)
         self.log.info("all nodes have common tip")
 
         expected_best = bestblocks[0]

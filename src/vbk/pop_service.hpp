@@ -36,7 +36,6 @@ PayloadsProvider &GetPayloadsProvider();
 
 //! returns true if all tips are stored in database, false otherwise
 bool hasPopData(CBlockTreeDB &db);
-altintegration::PopData getPopData();
 void saveTrees(altintegration::BlockBatchAdaptor &batch);
 bool loadTrees(CDBIterator &iter);
 

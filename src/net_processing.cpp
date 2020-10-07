@@ -316,6 +316,12 @@ struct CNodeState {
     //! Whether this peer wants invs or cmpctblocks (when possible) for block
     //! announcements.
     bool fPreferHeaderAndIDs;
+
+    //! VeriBlock: The block this peer thinks is current tip.
+    const CBlockIndex *pindexLastAnnouncedBlock = nullptr;
+    //! VeriBlock: The last full block we both have from announced chain.
+    const CBlockIndex *pindexLastCommonAnnouncedBlock = nullptr;
+
     /**
      * Whether this peer will send us cmpctblocks if we request them.
      * This is not used to gate request logic, as we really only care about
@@ -660,6 +666,31 @@ static void UpdateBlockAvailability(NodeId nodeid, const BlockHash &hash)
     }
 }
 
+// VeriBlock
+/** Update tracking information about which blocks a peer is assumed to
+ * have. */
+static void UpdateBestChainTip(NodeId nodeid, const BlockHash &tip)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    CNodeState *state = State(nodeid);
+    assert(state != nullptr);
+
+    const CBlockIndex *pindex = LookupBlockIndex(tip);
+    if (pindex && pindex->nChainWork > 0) {
+        state->pindexLastAnnouncedBlock = pindex;
+        LogPrint(BCLog::NET, "peer=%s: announced best chain %s\n", nodeid,
+                 tip.GetHex());
+
+        // announced block is better by chainwork. update
+        // pindexBestKnownBlock
+        if (state->pindexBestKnownBlock == nullptr ||
+            pindex->nChainWork >= state->pindexBestKnownBlock->nChainWork) {
+            state->pindexBestKnownBlock = pindex;
+        }
+    }
+
+    ProcessBlockAvailability(nodeid);
+}
+
 /**
  * When a peer sends us a valid block, instruct it to announce blocks to us
  * using CMPCTBLOCK if possible by adding its nodeid to the end of
@@ -744,15 +775,19 @@ static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex)
     return false;
 }
 
+// VeriBlock updated
 /**
  * Update pindexLastCommonBlock and add not-in-flight missing successors to
  * vBlocks, until it has at most count entries.
  */
-static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
-                                     std::vector<const CBlockIndex *> &vBlocks,
-                                     NodeId &nodeStaller,
-                                     const Consensus::Params &consensusParams)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+static void FindNextBlocksToDownload(
+    NodeId nodeid, unsigned int count,
+    std::vector<const CBlockIndex *> &vBlocks, NodeId &nodeStaller,
+    const Consensus::Params
+        &consensusParams, // either pindexBestBlock or pindexLastAnouncedBlock
+    const CBlockIndex *bestBlock,
+    // out parameter: sets last common block
+    const CBlockIndex **lastCommonBlockOut) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     if (count == 0) {
         return;
     }
@@ -764,39 +799,35 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
     // Make sure pindexBestKnownBlock is up to date, we'll need it.
     ProcessBlockAvailability(nodeid);
 
-    if (state->pindexBestKnownBlock == nullptr ||
-        state->pindexBestKnownBlock->nChainWork <
-            ::ChainActive().Tip()->nChainWork ||
-        state->pindexBestKnownBlock->nChainWork < nMinimumChainWork) {
+    if (bestBlock == nullptr || bestBlock->nChainWork < nMinimumChainWork) {
         // This peer has nothing interesting.
         return;
     }
 
-    if (state->pindexLastCommonBlock == nullptr) {
+    assert(lastCommonBlockOut);
+
+    if (*lastCommonBlockOut == nullptr) {
         // Bootstrap quickly by guessing a parent of our best tip is the forking
         // point. Guessing wrong in either direction is not a problem.
-        state->pindexLastCommonBlock = ::ChainActive()[std::min(
+        *lastCommonBlockOut = ::ChainActive()[std::min(
             state->pindexBestKnownBlock->nHeight, ::ChainActive().Height())];
     }
 
     // If the peer reorganized, our previous pindexLastCommonBlock may not be an
     // ancestor of its current tip anymore. Go back enough to fix that.
-    state->pindexLastCommonBlock = LastCommonAncestor(
-        state->pindexLastCommonBlock, state->pindexBestKnownBlock);
-    if (state->pindexLastCommonBlock == state->pindexBestKnownBlock) {
+    *lastCommonBlockOut = LastCommonAncestor(*lastCommonBlockOut, bestBlock);
+    if (*lastCommonBlockOut == bestBlock) {
         return;
     }
 
     std::vector<const CBlockIndex *> vToFetch;
-    const CBlockIndex *pindexWalk = state->pindexLastCommonBlock;
+    const CBlockIndex *pindexWalk = *lastCommonBlockOut;
     // Never fetch further than the best block we know the peer has, or more
     // than BLOCK_DOWNLOAD_WINDOW + 1 beyond the last linked block we have in
     // common with this peer. The +1 is so we can detect stalling, namely if we
     // would be able to download that next block if the window were 1 larger.
-    int nWindowEnd =
-        state->pindexLastCommonBlock->nHeight + BLOCK_DOWNLOAD_WINDOW;
-    int nMaxHeight =
-        std::min<int>(state->pindexBestKnownBlock->nHeight, nWindowEnd + 1);
+    int nWindowEnd = (*lastCommonBlockOut)->nHeight + BLOCK_DOWNLOAD_WINDOW;
+    int nMaxHeight = std::min<int>(bestBlock->nHeight, nWindowEnd + 1);
     NodeId waitingfor = -1;
     while (pindexWalk->nHeight < nMaxHeight) {
         // Read up to 128 (or more, if more blocks than that are needed)
@@ -806,8 +837,7 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
         int nToFetch = std::min(nMaxHeight - pindexWalk->nHeight,
                                 std::max<int>(count - vBlocks.size(), 128));
         vToFetch.resize(nToFetch);
-        pindexWalk = state->pindexBestKnownBlock->GetAncestor(
-            pindexWalk->nHeight + nToFetch);
+        pindexWalk = bestBlock->GetAncestor(pindexWalk->nHeight + nToFetch);
         vToFetch[nToFetch - 1] = pindexWalk;
         for (unsigned int i = nToFetch - 1; i > 0; i--) {
             vToFetch[i - 1] = vToFetch[i]->pprev;
@@ -825,7 +855,7 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
             }
             if (pindex->nStatus.hasData() || ::ChainActive().Contains(pindex)) {
                 if (pindex->HaveTxsDownloaded()) {
-                    state->pindexLastCommonBlock = pindex;
+                    *lastCommonBlockOut = pindex;
                 }
             } else if (mapBlocksInFlight.count(pindex->GetBlockHash()) == 0) {
                 // The block is not already downloaded, and not yet in flight.
@@ -3808,6 +3838,22 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
         if (pfrom->nVersion > BIP0031_VERSION) {
             uint64_t nonce = 0;
             vRecv >> nonce;
+
+            // VeriBlock
+            if (pfrom->nVersion > PING_BESTCHAIN_VERSION) {
+                // VeriBlock: immediately after nonce, receive best block hash
+                LOCK(cs_main);
+                BlockHash bestHash;
+                vRecv >> bestHash;
+                UpdateBestChainTip(pfrom->GetId(), bestHash);
+
+                connman->PushMessage(
+                    pfrom,
+                    msgMaker.Make(NetMsgType::PONG, nonce,
+                                  ::ChainActive().Tip()->GetBlockHash()));
+                return true;
+            }
+
             // Echo the message back with the nonce. This allows for two useful
             // features:
             //
@@ -3864,6 +3910,15 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                         sProblem = "Nonce zero";
                     }
                 }
+
+                // VeriBlock
+                if (pfrom->nVersion > PING_BESTCHAIN_VERSION) {
+                    LOCK(cs_main);
+                    BlockHash bestHash;
+                    vRecv >> bestHash;
+                    UpdateBestChainTip(pfrom->GetId(), bestHash);
+                }
+
             } else {
                 sProblem = "Unsolicited pong without ping";
             }
@@ -4998,10 +5053,43 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
         state.nBlocksInFlight < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
         std::vector<const CBlockIndex *> vToDownload;
         NodeId staller = -1;
-        FindNextBlocksToDownload(pto->GetId(),
-                                 MAX_BLOCKS_IN_TRANSIT_PER_PEER -
-                                     state.nBlocksInFlight,
-                                 vToDownload, staller, consensusParams);
+
+        // VeriBlock: find "blocks to download" in 2 chains: one that has "best
+        // chainwork", and second that is reported by peer as best.
+        ProcessBlockAvailability(pto->GetId());
+        // always download chain with higher chainwork
+        if (state.pindexBestKnownBlock) {
+            FindNextBlocksToDownload(
+                pto->GetId(),
+                MAX_BLOCKS_IN_TRANSIT_PER_PEER - state.nBlocksInFlight,
+                vToDownload, staller, consensusParams,
+                state.pindexBestKnownBlock, &state.pindexLastCommonBlock);
+        }
+        // should we fetch announced chain?
+        if (state.pindexLastAnnouncedBlock && state.pindexBestKnownBlock) {
+            // last announced block is by definition always <= chainwork than
+            // best known block by chainwork
+            assert(state.pindexLastAnnouncedBlock->nChainWork <=
+                   state.pindexBestKnownBlock->nChainWork);
+
+            // are they in the same chain?
+            if (state.pindexBestKnownBlock->GetAncestor(
+                    state.pindexLastAnnouncedBlock->nHeight) !=
+                state.pindexLastAnnouncedBlock) {
+                // no, additionally sync 'announced' chain
+                LogPrint(
+                    BCLog::NET,
+                    "Requesting announced best chain %d:%s from peer=%d\n",
+                    state.pindexLastAnnouncedBlock->GetBlockHash().ToString(),
+                    state.pindexLastAnnouncedBlock->nHeight, pto->GetId());
+                FindNextBlocksToDownload(pto->GetId(),
+                                         MAX_BLOCKS_IN_TRANSIT_PER_PEER -
+                                             state.nBlocksInFlight,
+                                         vToDownload, staller, consensusParams,
+                                         state.pindexLastAnnouncedBlock,
+                                         &state.pindexLastCommonAnnouncedBlock);
+            }
+        }
         for (const CBlockIndex *pindex : vToDownload) {
             vGetData.push_back(CInv(MSG_BLOCK, pindex->GetBlockHash()));
             MarkBlockAsInFlight(config, pto->GetId(), pindex->GetBlockHash(),

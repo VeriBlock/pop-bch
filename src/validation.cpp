@@ -2537,18 +2537,12 @@ CBlockIndex *CChainState::FindBestChain() {
 
     auto temp_set = setBlockIndexCandidates;
     for (auto *pindexNew : temp_set) {
-        LogPrintf("VeriBlock FindBestChain pindexNew: %s \n",
-                  pindexNew->GetBlockHash().GetHex());
         if (pindexNew == bestCandidate || !TestBlockIndex(pindexNew)) {
-            LogPrintf("VeriBlock here 1 FindBestChain pindexNew: %s \n",
-                      pindexNew->GetBlockHash().GetHex());
             continue;
         }
 
         if (bestCandidate == nullptr) {
             bestCandidate = pindexNew;
-            LogPrintf("VeriBlock here 2 FindBestChain pindexNew: %s \n",
-                      pindexNew->GetBlockHash().GetHex());
             continue;
         }
 
@@ -2557,18 +2551,11 @@ CBlockIndex *CChainState::FindBestChain() {
         if (Params().isPopEnabled(bestCandidate->nHeight)) {
             popComparisonResult =
                 VeriBlock::compareForks(*bestCandidate, *pindexNew);
-            LogPrintf(
-                "VeriBlock here 3 FindBestChain popComparisonResult: %d \n",
-                popComparisonResult);
         } else {
             popComparisonResult =
                 CBlockIndexWorkComparator()(bestCandidate, pindexNew) == true
                     ? -1
                     : 1;
-
-            LogPrintf(
-                "VeriBlock here 4 FindBestChain popComparisonResult: %d \n",
-                popComparisonResult);
         }
         // even if next candidate is pop equal to current pindexNew, it is
         // likely to have higher work
@@ -2581,8 +2568,6 @@ CBlockIndex *CChainState::FindBestChain() {
     // update best header after POP FR
     pindexBestHeader = bestCandidate;
 
-    LogPrintf("VeriBlock FindBestChain bestCandidate: %s \n",
-              bestCandidate->GetBlockHash().GetHex());
     return bestCandidate;
 }
 
@@ -2639,9 +2624,6 @@ bool CChainState::TestBlockIndex(CBlockIndex *pindexNew) {
 
             if (pindexNew->nChainWork > requiredWork) {
                 // We have enough, clear the parked state.
-                LogPrintf("Unpark chain up to block %s as it has "
-                          "accumulated enough PoW.\n",
-                          pindexNew->GetBlockHash().ToString());
                 fParkedChain = false;
                 UnparkBlock(pindexTest);
             }
@@ -2725,10 +2707,18 @@ bool CChainState::TestBlockIndex(CBlockIndex *pindexNew) {
 void CChainState::PruneBlockIndexCandidates() {
     // Note that we can't delete the current block itself, as we may need to
     // return to it later in case a reorganization to a better block fails.
-    auto it = setBlockIndexCandidates.begin();
-    while (it != setBlockIndexCandidates.end() &&
-           setBlockIndexCandidates.value_comp()(*it, m_chain.Tip())) {
-        setBlockIndexCandidates.erase(it++);
+    // auto it = setBlockIndexCandidates.begin();
+    // while (it != setBlockIndexCandidates.end() &&
+    //        setBlockIndexCandidates.value_comp()(*it, m_chain.Tip())) {
+    //     setBlockIndexCandidates.erase(it++);
+    // }
+
+    // VeriBlock
+    auto temp_set = setBlockIndexCandidates;
+    for (const auto &el : temp_set) {
+        if (el->pprev != nullptr) {
+            setBlockIndexCandidates.erase(el->pprev);
+        }
     }
 
     // Either the current tip or a successor of it we're working towards is left
@@ -2935,8 +2925,6 @@ bool CChainState::ActivateBestChain(const Config &config,
                 if (pblock && pindexBestChain == nullptr) {
                     auto *blockindex = LookupBlockIndex(pblock->GetHash());
                     assert(blockindex);
-                    LogPrintf("VeriBlock ActivateBestChain block hash: %s \n",
-                              pblock->GetHash().GetHex());
 
                     auto tmp_set = setBlockIndexCandidates;
                     for (auto *candidate : tmp_set) {
@@ -2958,8 +2946,9 @@ bool CChainState::ActivateBestChain(const Config &config,
                     pindexBestChain = FindBestChain();
                 }
 
-                LogPrintf("VeriBlock ActivateBestChain pindexBestChain: %s \n",
-                          pindexBestChain->GetBlockHash().GetHex());
+                // VeriBlock 
+                // update best known header
+                pindexBestHeader = pindexBestChain;
 
                 // Whether we have anything to do at all.
                 if (pindexBestChain == nullptr ||
@@ -3535,10 +3524,13 @@ void CChainState::ReceivedBlockTransactions(const CBlock &block,
                 pindex->nSequenceId = nBlockSequenceId++;
             }
 
-            if (m_chain.Tip() == nullptr ||
-                !setBlockIndexCandidates.value_comp()(pindex, m_chain.Tip())) {
-                setBlockIndexCandidates.insert(pindex);
-            }
+            // if (m_chain.Tip() == nullptr ||
+            //     !setBlockIndexCandidates.value_comp()(pindex, m_chain.Tip()))
+            //     { setBlockIndexCandidates.insert(pindex);
+            // }
+
+            // VeriBlock
+            setBlockIndexCandidates.insert(pindex);
 
             std::pair<std::multimap<CBlockIndex *, CBlockIndex *>::iterator,
                       std::multimap<CBlockIndex *, CBlockIndex *>::iterator>
@@ -4299,8 +4291,6 @@ bool CChainState::AcceptBlock(const Config &config,
     // if (gArgs.GetBoolArg("-parkdeepreorg", true)) {
     //     const CBlockIndex *pindexFork = m_chain.FindFork(pindex);
     //     if (pindexFork && pindexFork->nHeight + 1 < m_chain.Height()) {
-    //         LogPrintf("Park block %s as it would cause a deep reorg.\n",
-    //                   pindex->GetBlockHash().ToString());
     //         pindex->nStatus = pindex->nStatus.withParked();
     //         setDirtyBlockIndex.insert(pindex);
     //     }
@@ -5614,32 +5604,35 @@ void CChainState::CheckBlockIndex(const Consensus::Params &consensusParams) {
             // (i.e., hasParkedParent only if an ancestor is properly parked).
             assert(!pindex->nStatus.isOnParkedChain());
         }
-        if (!CBlockIndexWorkComparator()(pindex, m_chain.Tip()) &&
-            pindexFirstNeverProcessed == nullptr) {
-            if (pindexFirstInvalid == nullptr) {
-                // If this block sorts at least as good as the current tip and
-                // is valid and we have all data for its parents, it must be in
-                // setBlockIndexCandidates or be parked.
-                if (pindexFirstMissing == nullptr) {
-                    assert(pindex->nStatus.isOnParkedChain() ||
-                           setBlockIndexCandidates.count(pindex));
-                }
-                // m_chain.Tip() must also be there even if some data has
-                // been pruned.
-                if (pindex == m_chain.Tip()) {
-                    assert(setBlockIndexCandidates.count(pindex));
-                }
-                // If some parent is missing, then it could be that this block
-                // was in setBlockIndexCandidates but had to be removed because
-                // of the missing data. In this case it must be in
-                // mapBlocksUnlinked -- see test below.
-            }
-        } else {
-            // If this block sorts worse than the current tip or some ancestor's
-            // block has never been seen, it cannot be in
-            // setBlockIndexCandidates.
-            assert(setBlockIndexCandidates.count(pindex) == 0);
-        }
+        // VeriBlock disable
+        // clang-format off
+        // if (!CBlockIndexWorkComparator()(pindex, m_chain.Tip()) &&
+        //     pindexFirstNeverProcessed == nullptr) {
+        //     if (pindexFirstInvalid == nullptr) {
+        //         // If this block sorts at least as good as the current tip and
+        //         // is valid and we have all data for its parents, it must be in
+        //         // setBlockIndexCandidates or be parked.
+        //         if (pindexFirstMissing == nullptr) {
+        //             assert(pindex->nStatus.isOnParkedChain() ||
+        //                    setBlockIndexCandidates.count(pindex));
+        //         }
+        //         // m_chain.Tip() must also be there even if some data has
+        //         // been pruned.
+        //         if (pindex == m_chain.Tip()) {
+        //             assert(setBlockIndexCandidates.count(pindex));
+        //         }
+        //         // If some parent is missing, then it could be that this block
+        //         // was in setBlockIndexCandidates but had to be removed because
+        //         // of the missing data. In this case it must be in
+        //         // mapBlocksUnlinked -- see test below.
+        //     }
+        // } else {
+        //     // If this block sorts worse than the current tip or some ancestor's
+        //     // block has never been seen, it cannot be in
+        //     // setBlockIndexCandidates.
+        //     assert(setBlockIndexCandidates.count(pindex) == 0);
+        // }
+        // clang-format on
         // Check whether this block is in mapBlocksUnlinked.
         std::pair<std::multimap<CBlockIndex *, CBlockIndex *>::iterator,
                   std::multimap<CBlockIndex *, CBlockIndex *>::iterator>
