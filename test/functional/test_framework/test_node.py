@@ -33,7 +33,7 @@ from .util import (
     wait_until,
 )
 
-BITCOIND_PROC_WAIT_TIMEOUT = 60
+BITCOIND_PROC_WAIT_TIMEOUT = 60 * 10
 
 
 class FailedToStartError(Exception):

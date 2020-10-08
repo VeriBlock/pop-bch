@@ -77,8 +77,7 @@ class PopE2E(BitcoinTestFramework):
 
         containingblock = self.nodes[0].generate(nblocks=1)
         containingblock = self.nodes[0].getblock(containingblock[0])
-
-        print(len(containingblock['pop']['data']['vbkblocks']))
+        
         print(vbk_blocks_amount)
         print(vtbs_amount)
         assert len(containingblock['pop']['data']['vtbs']) == vtbs_amount

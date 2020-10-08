@@ -101,7 +101,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self.nodes = []
         self.network_thread = None
         # Wait for up to 60 seconds for the RPC server to respond
-        self.rpc_timeout = 60
+        self.rpc_timeout = 60 * 10
         self.supports_cli = False
         self.bind_to_localhost_only = True
 

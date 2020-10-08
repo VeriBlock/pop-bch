@@ -5288,7 +5288,8 @@ namespace p2p {
         }
 
         altintegration::ValidationState state;
-        if (!pop_mempool.submit(std::make_shared<pop_t>(data), state, false)) {
+        auto result = pop_mempool.submit(std::make_shared<pop_t>(data), state, false);
+        if (!result && result.status == altintegration::MemPool::FAILED_STATELESS) {
             LogPrint(BCLog::NET, "peer %d sent invalid pop data: %s\n",
                      node->GetId(), state.toString());
             Misbehaving(node->GetId(), 20,
