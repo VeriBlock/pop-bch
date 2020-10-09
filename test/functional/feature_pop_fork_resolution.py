@@ -110,7 +110,7 @@ class PopFr(BitcoinTestFramework):
 
         tip = self.get_best_block(self.nodes[0])
         assert txid in containingblock['pop']['data']['atvs'], "pop tx is not in containing block"
-        self.sync_blocks(self.nodes[0:1])
+        self.sync_blocks(self.nodes[0:1], timeout = 60)
         self.log.info("nodes[0,1] are in sync, pop tx containing block is {}".format(containingblock['height']))
         self.log.info("node0 tip is {}".format(tip['height']))
 
@@ -123,7 +123,7 @@ class PopFr(BitcoinTestFramework):
         connect_nodes(self.nodes[3], self.nodes[2])
         self.log.info("node3 started with 0 blocks, connected to nodes[0,2]")
 
-        self.sync_blocks(self.nodes, timeout=30)
+        self.sync_blocks(self.nodes, timeout = 60)
         self.log.info("nodes[0,1,2,3] are in sync")
 
         # expected best block hash is fork A (has higher pop score)
@@ -158,15 +158,16 @@ class PopFr(BitcoinTestFramework):
         self.log.info("all nodes disconnected")
 
         # node[i] creates endorsed chain
+        toMine = 15
         for i, node in enumerate(self.nodes):
-            self.log.info("node[{}] started to create endorsed chain of 100 blocks".format(i))
+            self.log.info("node[{}] started to create endorsed chain of {} blocks".format(i, toMine))
             addr = node.getnewaddress()
-            create_endorsed_chain(node, self.apm, 100, addr)
+            create_endorsed_chain(node, self.apm, toMine, addr)
 
-        # all nodes have different tips at height 223
+         # all nodes have different tips at height 223
         bestblocks = [self.get_best_block(x) for x in self.nodes]
         for b in bestblocks:
-            assert b['height'] == POP_SECURITY_FORK_POINT + 223
+            assert b['height'] == POP_SECURITY_FORK_POINT + 123 + toMine
         assert len(set([x['hash'] for x in bestblocks])) == len(bestblocks)
         self.log.info("all nodes have different tips")
 
@@ -176,8 +177,8 @@ class PopFr(BitcoinTestFramework):
                 connect_nodes(node, self.nodes[i])
 
         self.log.info("all nodes connected")
-        self.sync_blocks(self.nodes, timeout=120)
-        self.sync_pop_tips(self.nodes, timeout=120)
+        self.sync_blocks(self.nodes, timeout=60 * 10)
+        self.sync_pop_tips(self.nodes, timeout=60 * 10)
         self.log.info("all nodes have common tip")
 
         expected_best = bestblocks[0]
