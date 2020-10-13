@@ -116,7 +116,9 @@ NON_SCRIPTS = [
     "abc-transaction-ordering.py",
     "abc_feature_minerfund.py",
     "abc-finalize-block.py",
-    "abc_p2p_avalanche.py"
+    "abc_p2p_avalanche.py",
+    # VeriBlock
+    "feature_pop_popdata_max_size.py"
 ]
 
 TEST_PARAMS = {
