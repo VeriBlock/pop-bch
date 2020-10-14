@@ -38,6 +38,7 @@ Has been added VeriBlock lib dependency into the CMakeLists.txt
 Install veriblock-pop-cpp library
 ```sh
 git clone https://github.com/VeriBlock/alt-integration-cpp.git
+cd alt-integration-cpp
 mkdir build
 cd build
 cmake .. -DWITH_PYPOPMINER=ON -DCMAKE_INSTALL_PREFIX=/usr/local

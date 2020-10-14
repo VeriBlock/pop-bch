@@ -43,11 +43,6 @@ class PoPVerifyDB(BitcoinTestFramework):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
             self.sync_all()
 
-    # actual = node which restarted
-    # expected = node which not restarted
-    def verify_state(self, actual, expected):
-        self.sync_all([actual, expected], timeout=40)
-
     def run_test(self):
         """Main test logic"""
 
@@ -59,7 +54,7 @@ class PoPVerifyDB(BitcoinTestFramework):
 
         assert_pop_state_equal(self.nodes)
         create_endorsed_chain(self.nodes[0], self.apm, self.endorsed_length, self.addrs[0])
-        self.sync_all(self.nodes, timeout=20)
+        self.sync_all(self.nodes, timeout=60 * 5)
         assert_pop_state_equal(self.nodes)
 
         checkblocks = 0  # all blocks
@@ -71,7 +66,7 @@ class PoPVerifyDB(BitcoinTestFramework):
                 "-checklevel={}".format(checklevel)
             ])
             time.sleep(10)
-            self.sync_all(self.nodes, timeout=60)
+            self.sync_all(self.nodes, timeout=60 * 5)
             assert_pop_state_equal(self.nodes)
             self.log.info("success")
 

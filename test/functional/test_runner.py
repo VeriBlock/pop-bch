@@ -103,6 +103,8 @@ NON_SCRIPTS = [
     "p2p_fingerprint.py",
     "p2p_dos_header_tree.py",
     "p2p_unrequested_blocks.py",
+    "wallet_resendwallettransactions.py",
+    "example_test.py",
     # VeriBlock
     # disable some bitcoin cash tests
     "abc-invalid-chains.py",
@@ -117,6 +119,7 @@ NON_SCRIPTS = [
     "abc_feature_minerfund.py",
     "abc-finalize-block.py",
     "abc_p2p_avalanche.py",
+    "abc-parkedchain.py",
     # VeriBlock
     "feature_pop_popdata_max_size.py"
 ]
