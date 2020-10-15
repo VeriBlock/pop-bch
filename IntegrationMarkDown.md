@@ -4,7 +4,7 @@ First should install missing dependency jemalloc.
 ```sh 
 git clone https://github.com/jemalloc/jemalloc.git
 cd jemalloc
-git checkout ea6b3e973b477b8061e0076bb257dbd7f3faa756
+git checkout 5.2.1
 ./autogen
 make 
 make install
@@ -29,7 +29,7 @@ make check-functional
 
 ## Add VeriBlock-PoP library dependency
 
-Has been added VeriBlock lib dependency into the CMakeLists.txt
+Let`s add VeriBlock lib dependency into the CMakeLists.txt
 ```diff
 + # VeriBlock
 + find_package(veriblock-pop-cpp REQUIRED)
@@ -41,16 +41,18 @@ git clone https://github.com/VeriBlock/alt-integration-cpp.git
 cd alt-integration-cpp
 mkdir build
 cd build
-cmake .. -DWITH_PYPOPMINER=ON -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
 make
 make install
 ```
 
 ## Adding PopData into the Block
-I have added a new entity PopData into the CBlock class in the block.h file and provide a new nVersion flag.
-Updated serialisation of the CBlock.
-First has been added POP_BLOCK_VERSION_BIT flag.
-vbk/vbk.hpp
+We should add a new entity PopData into the CBlock class in the block.h file and provide a new nVersion flag. This is needed to store VeriBlock specific information as ATVs, VTBs, VBKs.
+For these porposes first we will add a new POP_BLOCK_VERSION_BIT flag, that will help to distinguish originals blocks that don not have any VeriBlock specific data, and blocks that contain such data.
+Next step, update serialization of the block, that popData will alse serialize/deserialize of POP_BLOCK_VERSION_BIT is setted.  And extend a serialization/deserialization methods for the PopData itself, that we can use the bitcoin`s native serialization/deserialization approach.
+
+Define POP_BLOCK_VERSION_BIT flag.\
+[<font style="color: red"> vbk/vbk.hpp </font>]
 ```diff
 #ifndef BITCOIN_SRC_VBK_VBK_HPP
 #define BITCOIN_SRC_VBK_VBK_HPP
@@ -68,8 +70,8 @@ const static int32_t POP_BLOCK_VERSION_BIT = 0x80000UL;
 #endif //BITCOIN_SRC_VBK_VBK_HPP
 ```
 
-
-primitives/block.h
+Add new popData field into the block and update serialization/deserialization of the block.\
+[<font style="color: red"> primitives/block.h </font>]
 ```diff
 + #include "veriblock/entities/popdata.hpp"
 ...
@@ -91,8 +93,10 @@ public:
 };
 ```
 
-Has been update serialization of the CBlockHeaderAndShortTxIDs class in the blockencodings.h, it is needed for the block sending over the p2p.
-blockencodings.h
+Also we should update some p2p networking objects like CBlockHeaderAndShortTxIDs, BlockTransaction, PartiallyDownloadedBlock with the VeriBlock PopData for the correct broadcasting of such VeriBlock information throught the network.
+
+Add new PopData filed into the BlockTransaction, CBlockHeaderAndShortTxIDs, PartiallyDownloadedBlock and update their serialization/deserialization.\
+[<font style="color: red">blockencodings.h</font>]
 ```diff
 class BlockTransactions {
 public:
@@ -140,7 +144,8 @@ public:
 +                         const std::vector<CTransactionRef> &vtx_missing, const altintegration::PopData& popData);
 };
 ```
-blockencodings.cpp
+Update PartiallyDownloadedBlock object initializing, to fill popData field.\
+[<font style="color: red">blockencodings.cpp</font>]
 ```diff
 + ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock &block, const std::vector<CTransactionRef> &vtx_missing, const altintegration::PopData& popData) {
 +    block.popData = popData;
@@ -179,8 +184,8 @@ ReadStatus PartiallyDownloadedBlock::InitData(
 }
 ```
 
-Also for the correct p2p block processing has been updated net_processing.cpp source file
-net_processing.cpp
+Also need to update setup of the popData fields during the netprocessing.\
+[<font style="color: red">net_processing.cpp</font>]
 ```diff
 inline static void SendBlockTransactions(const CBlock &block,
                                          const BlockTransactionsRequest &req,
@@ -204,8 +209,8 @@ if (strCommand == NetMsgType::CMPCTBLOCK) {
     ...
 }
 ```
-Also has been validation rules in the validation.cpp source file
-validation.cpp
+The last step is to update validation rules, add check that if block contains VeriBlock popData, so block.nVersion must contain POP_BLOCK_VERSION_BIT and otherwise if block does not contain VeriBlock popData. For this update CheckBlock function in the validation.cpp.\
+[<font style="color: red">validation.cpp</font>]
 ```diff
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW)
 {
@@ -220,8 +225,8 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 ...
 }
 ```
-Miner has been updated with the CreateNewBlock() function.
-miner.cpp
+Also should update the mining function to setup POP_BLOCK_VERSION_BIT if VeriBlock popData is contained in the block.\
+[<font style="color: red">miner.cpp</font>]
 ```diff
 +    // VeriBlock: add PopData into the block
 +    if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() || !pblock->popData.vtbs.empty()) {
@@ -229,8 +234,8 @@ miner.cpp
 +    }
 ```
 
-Overloaded serialization opereations in the serialization.h
-serialization.h
+Overloaded serialization opereations for the VeriBlock PopData in the serialization.h.\
+[<font style="color: red">serialization.hpp</font>]
 ```diff
 + // VeriBlock: Serialize a PopData object
 + template<typename Stream> inline void Serialize(Stream& s, const altintegration::PopData& pop_data) {
@@ -244,27 +249,31 @@ serialization.h
 +    pop_data = altintegration::PopData::fromVbkEncoding(bytes_data);
 + }
 ```
-## Add PopSecurity fokrpoint parameter
+## Add PopSecurity forkpoint parameter
 
-Has been added a block heght into the Consensus::Params from which enables PopSecurity, params.h and chainparams.cpp.
-params.h
+It is obvious that for the already running blockchains, only the one way to enable VeriBlock security it is made a fork. So for this purposes we will provide a height variable of the forkpoint. Add a block height into the Consensus::Params from which enables PopSecurity.
+
+[<font style="color: red">params.h</font>]
 ```diff
 struct Params {
     ...
 +   // VeriBlock
 +   uint64_t VeriBlockPopSecurityHeight;
 };
+...
 ```
-chainparams.cpp
+
+Define such VeriBlockPopSecurityHeight variable.\
+[<font style="color: red">chainparams.cpp</font>]
 ```diff
 ...
 class CMainParams : public CChainParams {
 public:
     CMainParams() {
         ...
-        // VeriBlock
-        // TODO: set an VeriBlock pop security fork height
-        // consensus.VeriBlockPopSecurityHeight = -1;
++        // VeriBlock
++        // TODO: set an VeriBlock pop security fork height
++        // consensus.VeriBlockPopSecurityHeight = -1;
         ...
     }
 };
@@ -273,9 +282,9 @@ class CTestNetParams : public CChainParams {
 public:
     CTestNetParams() {
         ...
-        // VeriBlock
-        // TODO: set an VeriBlock pop security fork height
-        // consensus.VeriBlockPopSecurityHeight = -1;
++        // VeriBlock
++        // TODO: set an VeriBlock pop security fork height
++        // consensus.VeriBlockPopSecurityHeight = -1;
         ...
     }
 };
@@ -284,15 +293,15 @@ class CRegTestParams : public CChainParams {
 public:
     CRegTestParams() {
         ...
-        // VeriBlock
-        // TODO: set an VeriBlock pop security fork height
-        consensus.VeriBlockPopSecurityHeight = 1;
++        // VeriBlock
++        // TODO: set an VeriBlock pop security fork height
++        consensus.VeriBlockPopSecurityHeight = 1;
         ...
     }
 };
 ```
-Also have been updated ContextualCheckBlockHeader() function in the validation.cpp
-validation.cpp
+Also update validation for the block, if PoPSecurity disabled, so POP_BLOCK_VERSION_BIT should not been installed.\
+[<font style="color: red">validation.cpp</font>]
 ```diff
 static bool ContextualCheckBlockHeader(const CChainParams &params,
                                        const CBlockHeader &block,
@@ -316,8 +325,9 @@ static bool ContextualCheckBlockHeader(const CChainParams &params,
 ```
 ## Add VeriBlock config
 
-Create two new source files pop_common.hpp, pop_common.cpp
-vbk/pop_common.hpp
+Before adding using and defining some objects from the VeriBlock library, we should define some VeriBlock specific parameters for library. For that we have to add new Config class which inherits from the altintegration::AltChainParams.
+But first we will add functions that will wrap the interaction with the library. For that create two new source files pop_common.hpp, pop_common.cpp.\
+[<font style="color: red">vbk/pop_common.hpp</font>]
 ```diff
 + #ifndef BITCOIN_SRC_VBK_POP_COMMON_HPP
 + #define BITCOIN_SRC_VBK_POP_COMMON_HPP
@@ -338,7 +348,7 @@ vbk/pop_common.hpp
 
 + #endif //BITCOIN_SRC_VBK_POP_COMMON_HPP
 ```
-vbk/pop_common.cpp
+[<font style="color: red">vbk/pop_common.cpp</font>]
 ```diff
 #include "pop_common.hpp"
 
@@ -367,8 +377,10 @@ std::string toPrettyString(const altintegration::PopContext &pop) {
 
 } // namespace VeriBlock
 ```
-Has been created bootstraps.hpp, bootstraps.cpp source files with the initial confogiration of the VeriBlock configs.
-vbk/bootstraps.hpp
+
+Add the initial configuration of the VeriBlock and Bitcoin blockchain,
+add the predifined bootstraps blocks. And create an AltChainParamsVBITCASH class with the veriblock configuration of the bitcoin cash blockchain.\
+[<font style="color: red">vbk/bootstraps.hpp</font>]
 ```
 #ifndef __BOOTSTRAPS_BTC_VBK
 #define __BOOTSTRAPS_BTC_VBK
@@ -421,7 +433,7 @@ void selectPopConfig(const std::string &btcnet, const std::string &vbknet,
 
 #endif
 ```
-vbk/bootstraps.cpp
+[<font style="color: red">vbk/bootstraps.cpp</font>]
 ```
 #include <boost/algorithm/string.hpp>
 #include <chainparams.h>
@@ -564,8 +576,9 @@ const std::vector<std::string> testnetBTCblocks = {};
 
 const std::vector<std::string> testnetVBKblocks = {};
 ```
-Also has been added veriblock util.hpp source file, with the some usefull set of functions for the integration purposes
-vbk/util.hpp
+
+Additionally create an util.hpp source file, with some usefull set of functions for the integration purposes. We will use it among the integration process.\
+[<font style="color: red">vbk/util.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_UTIL_HPP
 #define BITCOIN_SRC_VBK_UTIL_HPP
@@ -683,8 +696,8 @@ inline bool FindPayloadInBlock(const CBlock &block,
 } // namespace VeriBlock
 #endif
 ```
-Has been updated bitcoind.cpp, bitcoin-tx.cpp, bitcoin-wallet.cpp to setup VeriBlock`s configs.
-bitcoind.cpp
+Now we have to update initializing of the bitcoind, bitcoin-wallet etc. to setup VeriBlock`s configs.\
+[<font style="color: red">bitcoind.cpp</font>]
 ```diff
  // Check for -chain, -testnet or -regtest parameter (Params() calls are
         // only valid after this clause)
@@ -697,7 +710,7 @@ bitcoind.cpp
             return InitError(strprintf("%s\n", e.what()));
         }
 ```
-bitcoin-tx.cpp
+[<font style="color: red">bitcoin-tx.cpp</font>]
 ```diff
 // Check for -chain, -testnet or -regtest parameter (Params() calls are only
     // valid after this clause)
@@ -710,7 +723,7 @@ bitcoin-tx.cpp
         return EXIT_FAILURE;
     }
 ```
-bitcoin-wallet.cpp
+[<font style="color: red">bitcoin-wallet.cpp</font>]
 ```diff
     // Check for -testnet or -regtest parameter (Params() calls are only valid
     // after this clause)
@@ -719,8 +732,8 @@ bitcoin-wallet.cpp
 +    VeriBlock::selectPopConfig(gArgs);
 ```
 
-Has been updated CMakeLists.txt in the src directory
-CMakeLists.txt
+The last step is to update CMakeLists file, add our new source files.
+[<font style="color: red">CMakeLists.txt</font>]
 ```diff
 add_library(common
 +   vbk/pop_common.cpp
@@ -762,8 +775,8 @@ add_library(common
 ## Add PayloadsProvider
 
 We should add a PayloadsProvider for the veriblock library. The main idea of such class that we will reuse the existing levelev-db database that is used in the original bitcoin cash. Our library allows to use the native realisation of the database. For this purposuses, has been created PayloadsProvider class which is inherited from the [altintegration::PayloadsProvider class](https://veriblock-pop-cpp.netlify.app/structaltintegration_1_1payloadsprovider).
-First should create two new source files payloads_provider.hpp, block_batch_adaptor.hpp
-vbk/adaptors/payloads_provider.hpp
+First should create two new source files payloads_provider.hpp, block_batch_adaptor.hpp.\
+[<font style="color: red">vbk/adaptors/payloads_provider.hpp</font>]
 ```
 #ifndef INTEGRATION_REFERENCE_BTC_PAYLOADS_PROVIDER_HPP
 #define INTEGRATION_REFERENCE_BTC_PAYLOADS_PROVIDER_HPP
@@ -850,7 +863,7 @@ private:
 
 #endif
 ```
-vbk/adaptors/block_batch_adaptor.hpp
+[<font style="color: red">vbk/adaptors/block_batch_adaptor.hpp</font>]
 ```
 #ifndef INTEGRATION_REFERENCE_BTC_BLOCK_BATCH_ADAPTOR_HPP
 #define INTEGRATION_REFERENCE_BTC_BLOCK_BATCH_ADAPTOR_HPP
@@ -932,8 +945,8 @@ private:
 
 #endif
 ```
-Have been created wrappers for such entities, and they put in the following source files pop_service.hpp, pop_service.cpp
-vbk/pop_service.hpp
+Create wrappers for such entities.\
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_POP_SERVICE_HPP
 #define BITCOIN_SRC_VBK_POP_SERVICE_HPP
@@ -962,7 +975,7 @@ bool loadTrees(CDBIterator &iter);
 
 #endif
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```
 #include <memory>
 #include <vector>
@@ -1105,8 +1118,8 @@ bool loadTrees(CDBIterator &iter) {
 
 } // namespace VeriBlock
 ```
-Also have been updated serialization methods for the VBK entites like ATV, VTB, VbkBlock etc. in the serialize.h
-serialize.h
+Also update serialization methods for the VBK entites like ATV, VTB, VbkBlock etc. in the serialize.h.\
+[<font style="color: red">serialize.h</font>]
 ```diff
 + #include "veriblock/entities/altblock.hpp"
 ...
@@ -1207,9 +1220,8 @@ serialize.h
 +    block = altintegration::VbkBlock::fromVbkEncoding(stream);
 + }
 ```
-Now we have to add usage of such functions in the bitcoin cash. 
-Have been updated the following source files init.cpp, txdb.cpp, validation.cpp
-init.cpp
+Now we have to define the VeriBlock storage during the bitcoin cash initialize proccess.\
+[<font style="color: red">init.cpp</font>]
 ```diff
 + #include <vbk/pop_service.hpp>
 ...
@@ -1239,7 +1251,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
 ...
 }
 ```
-txdb.cpp
+[<font style="color: red">txdb.cpp</font>]
 ```diff
 + #include <vbk/pop_service.hpp>
 ...
@@ -1268,7 +1280,7 @@ bool CBlockTreeDB::WriteBatchSync(
 }
 
 ```
-validation.cpp
+[<font style="color: red">validation.cpp</font>]
 ```diff
 + #include <vbk/pop_service.hpp>
 
@@ -1330,8 +1342,8 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
 
 ```
 
-The last step is to update tests, has been updated constructor of the TestingSetup struct in the setup_common.cpp
-test/util/setup_common.cpp
+The last step is to update tests, update constructor of the TestingSetup struct in the setup_common.cpp.\
+[<font style="color: red">test/util/setup_common.cpp</font>]
 ```diff
 + #include <vbk/bootstraps.hpp>
 + #include <vbk/pop_service.hpp>
@@ -1357,9 +1369,9 @@ BasicTestingSetup::BasicTestingSetup() {
 
 ## Add Pop mempool
 
-Now we want to add using of the popmempool to the bitcoin cash. For that we should implement few methods for the submitting pop payloads to the mempool, getting payloads during the block mining, and removing payloads after successful block submitting to the blockchain.
-First we should implement such methods in the pop_service.hpp pop_service.cpp source files.
-vbk/pop_service.hpp
+Now we want to add using of the popmempool in the bitcoin cash. For that we should implement few methods for the submitting pop payloads to the mempool, getting payloads during the block mining, and removing payloads after successful block submitting to the blockchain.
+First we should implement such methods in the pop_service.hpp pop_service.cpp source files.\
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```diff
 + //! mempool methods
 + altintegration::PopData getPopData();
@@ -1367,7 +1379,7 @@ vbk/pop_service.hpp
 + void updatePopMempoolForReorg();
 + void addDisconnectedPopdata(const altintegration::PopData &popData);
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 + altintegration::PopData getPopData() EXLUSIVE_LOCKS_REQUIRED(cs_main)  {
 +    AssertLockHeld(cs_main);
@@ -1393,8 +1405,8 @@ vbk/pop_service.cpp
 +     disconnected_popdata.push_back(popData);
 + }
 ```
-Now add getting popData during block mining, has been updated CreateNewBlock() in the miner.cpp
-miner.cpp
+Add getting popData during block mining, has been updated CreateNewBlock() in the miner.cpp.\
+[<font style="color: red">miner.cpp</font>]
 ```diff
 + #include <vbk/pop_service.hpp>
 ...
@@ -1408,8 +1420,8 @@ if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() || !pblock
 }
 ...
 ```
-Has been added removing popData after successful submitting to the blockchain. Has been modified ConnectTip(), DisconnectTip() and UpdateMempoolForReorg() methods in the validation.cpp and txmempool.cpp.
-validation.cpp
+Has been added removing popData after successful submitting to the blockchain. Modify ConnectTip(), DisconnectTip() and UpdateMempoolForReorg() methods in the validation.cpp and txmempool.cpp.\
+[<font style="color: red">validation.cpp</font>]
 ```diff
 ...
 ConnectTip() {
@@ -1442,7 +1454,7 @@ DisconnectTip() {
 }
 ...
 ```
-txmempool.cpp
+[<font style="color: red">txmempool.cpp</font>]
 ```diff
 + #include <vbk/pop_service.hpp>
 ...
@@ -1458,8 +1470,9 @@ UpdateMempoolForReorg() {
 
 ## Add VeriBlock AltTree
 
-At this stage we will add functions for the VeriBlock AltTree maintaining such as setState(), acceptBlock(), addAllBlockPayloads().
-vbk/pop_service.hpp
+At this stage we will add functions for the VeriBlock AltTree maintaining such as setState(), acceptBlock(), addAllBlockPayloads(), that will change the state of the VeriBlock AltTree.
+acceptBlock() - adds the altchain block into to the library, addAllBlockPayloads() - adds popData for the current altchain block into the library, should be invoked before the acceptBlock(), setState() - change the state of the VeriBlock AltTree to the state of the provided altchain block.\
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```diff
 + #include <consensus/validation.h>
 + #include <vbk/util.hpp>
@@ -1507,7 +1520,7 @@ void addDisconnectedPopdata(const altintegration::PopData &popData)
 + std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks);
 ...
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 + #include <vbk/util.hpp>
 ...
@@ -1601,8 +1614,8 @@ vbk/pop_service.cpp
 +        std::vector<uint8_t>{hash.begin(), hash.end()}, state);
 + }
 ```
-Have been updated validation.cpp, init.cpp.
-validation.cpp
+Update block processing during the ConnectBlock(), UpdateTip(), ApplyBlockUndo(), AcceptBlockHeader(), AcceptBlock(), TestBlockValidity().\
+[<font style="color: red">validation.cpp</font>]
 ```diff
 ...
 ConnectBlock() {
@@ -1753,7 +1766,7 @@ TestBlockValidity() {
     return true;
 }
 ```
-init.cpp
+[<font style="color: red">init.cpp</font>]
 ```diff
 AppInitMain() {
 ...
@@ -1789,9 +1802,9 @@ undo_tests.cpp
 
 ## Add Unit tests
 
-At this stage we can test previously added improvements.
-First should add some util test source files like consts.hpp, e2e_fixture.hpp.
-vbk/test/util/consts.hpp
+Now we will test all that functionality that we have added previously.
+First should add some util test source files like consts.hpp, e2e_fixture.hpp.\
+[<font style="color: red">vbk/test/util/consts.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_TEST_UTIL_UTIL_HPP
 #define BITCOIN_SRC_VBK_TEST_UTIL_UTIL_HPP
@@ -1865,7 +1878,7 @@ static const std::string defaultVtbEncoded =
 
 #endif 
 ```
-vbk/test/util/e2e_fixture.hpp
+[<font style="color: red">vbk/test/util/e2e_fixture.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_TEST_UTIL_E2E_FIXTURE_HPP
 #define BITCOIN_SRC_VBK_TEST_UTIL_E2E_FIXTURE_HPP
@@ -2082,8 +2095,8 @@ struct E2eFixture : public TestChain100Setup {
 
 #endif 
 ```
-Also should to modify setup_common.cpp, for the basic test setup.
-test/util/setup_common.cpp
+Modify setup_common.cpp, for the basic test setup.\
+[<font style="color: red">test/util/setup_common.cpp</font>]
 ```diff
 TestChain100Setup::TestChain100Setup() {
     // Generate a 100-block chain:
@@ -2102,8 +2115,8 @@ TestChain100Setup::TestChain100Setup() {
 }
 
 ```
-Has been modfied miner_tests.cpp, disabled CreateNewBlock_validity test case.
-miner_tests.cpp
+Modify miner_tests.cpp, disabled CreateNewBlock_validity test case.\
+[<font style="color: red">test/util/setup_common.cpp</font>]
 ```diff
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
@@ -2115,8 +2128,8 @@ fCheckpointsEnabled = true;
 + #endif
 }
 ```
-So now we can add test case which will test the veriblock pop behaviour, e2e_pop_tests.cpp
-vbk/test/unit/e2e_pop_tests.cpp
+So now we can add test case which will test the veriblock pop behaviour, e2e_pop_tests.cpp.\
+[<font style="color: red">vbk/test/unit/e2e_pop_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 
@@ -2178,11 +2191,10 @@ BOOST_AUTO_TEST_SUITE_END()
 ```
 ## Update block merkleroot, block size calculating
 
-For the veriblock pop security we should add context info conrainer with the pop related information like block height, keystone array, popData merkle root. The root hash of the context info container should be added to the original block merkle root calculation.
+For the veriblock pop security we should also add context info conrainer with the pop related information like block height, keystone array, popData merkle root. The root hash of the context info container should be added to the original block merkle root calculation.
 
 VeriBlock merkle root specific functions have been implemented in the merkle.hpp, merkle.cpp, context_info_container.hpp
-
-vbk/entity/context_info_container.hpp
+[<font style="color: red">vbk/entity/context_info_container.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_ENTITY_CONTEXT_INFO_CONTAINER_HPP
 #define BITCOIN_SRC_VBK_ENTITY_CONTEXT_INFO_CONTAINER_HPP
@@ -2244,7 +2256,7 @@ struct ContextInfoContainer {
 
 #endif
 ```
-vbk/merkle.hpp
+[<font style="color: red">vbk/merkle.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_MERKLE_HPP
 #define BITCOIN_SRC_VBK_MERKLE_HPP
@@ -2272,7 +2284,7 @@ CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block);
 
 #endif
 ```
-vbk/merkle.cpp
+[<font style="color: red">vbk/merkle.cpp</font>]
 ```
 #include <consensus/merkle.h>
 #include <hash.h>
@@ -2457,8 +2469,7 @@ CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block) {
 ```
 
 Next step is to update mining process and validation process with our new rules.
-
-miner.cpp
+[<font style="color: red">miner.cpp</font>]
 ```diff
 + #include <vbk/merkle.hpp>
 ...
@@ -2490,7 +2501,7 @@ IncrementExtraNonce() {
 +        pindexPrev, *pblock, Params().GetConsensus());
 }
 ```
-test/util/mining.cpp
+[<font style="color: red">test/util/mining.cpp</font>]
 ```diff
 + #include <vbk/merkle.hpp>
 ...
@@ -2509,7 +2520,7 @@ PrepareBlock() {
     return block;
 }
 ```
-validation.h
+[<font style="color: red">validation.h</font>]
 ```diff
 ...
 bool CheckBlock(const CBlock &block, BlockValidationState &state,
@@ -2520,9 +2531,8 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
 ...
 ```
 
-As veriblock merkleroot algorithm depends on the blockchain, so we should move merkle root validation from the CheckBlock() to the ContextualCheckBlock() function.
-
-validation.cpp
+As veriblock merkleroot algorithm depends on the blockchain, so we should move merkle root validation from the CheckBlock() to the ContextualCheckBlock() function.\
+[<font style="color: red">validation.cpp</font>]
 ```diff
 + #include <vbk/merkle.hpp>
 ...
@@ -2629,8 +2639,8 @@ TestBlockValidity() {
 ```
 
 The next step is to update current tests and add new veriblock tests.
-Has been disabled validation_block_tests.cpp
-test/validation_block_tests.cpp
+Disable validation_block_tests.cpp.\
+[<font style="color: red">test/validation_block_tests.cpp</font>]
 ```diff
 
 BOOST_FIXTURE_TEST_SUITE(validation_block_tests, RegTestingSetup)
@@ -2648,8 +2658,8 @@ BOOST_FIXTURE_TEST_SUITE(validation_block_tests, RegTestingSetup)
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
-Also have been disabled for a while some functional tests.
-../test/functional/test_runner.py
+Also disable for a while some functional tests.\
+[<font style="color: red">../test/functional/test_runner.py</font>]
 ```diff
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but
@@ -2693,9 +2703,8 @@ NON_SCRIPTS = [
 +    "abc_feature_minerfund.py",
 ]
 ```
-Have been added new tests: block_validation_tests.cpp, pop_util_tests.cpp, vbk_merkle_tests.cpp.
-
-vbk/test/unit/block_validation_tests.cpp
+Add new tests: block_validation_tests.cpp, pop_util_tests.cpp, vbk_merkle_tests.cpp.\
+[<font style="color: red">vbk/test/unit/block_validation_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 #include <chainparams.h>
@@ -2813,7 +2822,7 @@ BOOST_FIXTURE_TEST_CASE(BlockPoPVersion_test, E2eFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
-vbk/test/unit/pop_util_tests.cpp
+[<font style="color: red">vbk/test/unit/pop_util_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 
@@ -2898,7 +2907,7 @@ BOOST_AUTO_TEST_CASE(make_context_info) {
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
-vbk/test/unit/vbk_merkle_tests.cpp
+[<font style="color: red">vbk/test/unit/vbk_merkle_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 
@@ -2988,8 +2997,8 @@ BOOST_AUTO_TEST_SUITE_END()
 
 ## Add Pop rewards
 
-Has been modified reward algorithm, to the basic PoW rewards has been added so called pop rewards for the pop miners. For these purposes has been added corresponding functions in the pop_service.hpp/cpp.
-vbk/pop_service.hpp
+Modify reward algorithm, to the basic PoW rewards has been added so called pop rewards for the pop miners. For these purposes has been added corresponding functions in the pop_service.hpp/cpp.\
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```diff
 + //! pop rewards
 + PoPRewards getPopRewards(const CBlockIndex &pindexPrev)
@@ -3007,7 +3016,7 @@ vbk/pop_service.hpp
 + Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
 +                           const Consensus::Params &consensusParams);
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 + #include <chainparams.h>
 ...
@@ -3165,8 +3174,8 @@ vbk/pop_service.cpp
 +}
 ```
 
-Has been modified CChainParams, have been added two few new veriblock parametrs for the pop rewards.
-chainparams.h
+Modify CChainParams, have been added two few new veriblock parametrs for the pop rewards.\
+[<font style="color: red">chainparams.h</font>]
 ```diff
 class CChainParams {
 public:
@@ -3183,8 +3192,8 @@ public:
 };
 ```
 
-Also has been modified mining process in the CreateNewBlock function, and some validation rules in the validation.cpp
-miner.cpp
+Also modify mining process in the CreateNewBlock function insert VeriBlock PoPRewards into the conibase transaction, and some validation rules in the validation.cpp.\
+[<font style="color: red">miner.cpp</font>]
 ```diff
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
@@ -3199,7 +3208,7 @@ miner.cpp
 +    // VeriBlock add pop rewards
 +    VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev);
 ```
-validation.cpp
+[<font style="color: red">validation.cpp</font>]
 ```diff
 Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
     int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
@@ -3253,8 +3262,8 @@ ConnectBlock() {
 
 ```
 
-As well has been added tests for the pop rewards.
-vbk/test/util/pop_rewards_tests.cpp
+Also add tests for the pop rewards.
+[<font style="color: red">vbk/test/util/pop_rewards_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 #include <script/interpreter.h>
@@ -3353,7 +3362,7 @@ BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
-test/CMakeLists.txt
+[<font style="color: red">test/CMakeLists.txt</font>]
 ```diff
         # VeriBlock Tests
 		../vbk/test/unit/e2e_pop_tests.cpp
@@ -3365,8 +3374,8 @@ test/CMakeLists.txt
 
 ## Add VeriBlock pop forkresolution
 
-Before we start implementing the pop forkresolution algorithm, we will make a short code refactoring, will create a function in the chainparams which will define if the pop security is enabled.
-chainparams.h
+Before we start implementing the pop forkresolution algorithm, we will make a short code refactoring, will create a function in the chainparams which will define if the pop security is enabled.\
+[<font style="color: red">chainparams.h</font>]
 ```diff
      // VeriBlock
 +    bool isPopEnabled(int height) const {
@@ -3375,16 +3384,16 @@ chainparams.h
      uint32_t PopRewardPercentage() const { return mPopRewardPercentage; }
      int32_t PopRewardCoefficient() const { return mPopRewardCoefficient; }
 ```
-Also has been changed hight of the PoP veriblock security forkpoint in the regtest, it is needed in the tests.
-chainparams.cpp
+Changed hight of the PoP veriblock security forkpoint in the regtest, it is needed in the tests.\
+[<font style="color: red">chainparams.cpp</font>]
 ```diff
     // VeriBlock
     // TODO: set an VeriBlock pop security fork height
 -    consensus.VeriBlockPopSecurityHeight = 200;
 +    consensus.VeriBlockPopSecurityHeight = 200;
 ```
-Have been updated all places where comparison with the VeriBlockPopSecurityHeight parametr was being used.
-miner.cpp
+Update all places where comparison with the VeriBlockPopSecurityHeight parameter was being used.\
+[<font style="color: red">miner.cpp</font>]
 ```diff
     // VeriBlock: add PopData into the block
 -   if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
@@ -3400,7 +3409,7 @@ miner.cpp
         coinbaseTx.vout.push_back(popOut);
     }
 ```
-vbk/merkle.hpp
+[<font style="color: red">vbk/merkle.hpp</font>]
 ```diff
 uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 -                           const Consensus::Params &param,
@@ -3411,7 +3420,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
                               BlockValidationState &state);
 
 ```
-vbk/merkle.cpp
+[<font style="color: red">vbk/merkle.cpp</font>]
 ```diff
 uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 -                           const Consensus::Params &param, bool *mutated) {
@@ -3441,13 +3450,13 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
     }
 }
 ```
-vbk/pop_service.hpp
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```diff
 -Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
 -                          const Consensus::Params &consensusParams);
 +Amount getCoinbaseSubsidy(Amount subsidy, int32_t height);
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 -    if (param.GetConsensus().VeriBlockPopSecurityHeight >
 -        (pindexPrev.nHeight)) {
@@ -3461,7 +3470,7 @@ vbk/pop_service.cpp
 +Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
 +    if (Params().isPopEnabled(height)) {
 ```
-vbk/test/util/e2e_fixture.hpp
+[<font style="color: red">vbk/test/util/e2e_fixture.hpp</font>]
 ```diff
     E2eFixture() {
         altintegration::SetLogger<TestLogger>();
@@ -3479,14 +3488,14 @@ vbk/test/util/e2e_fixture.hpp
     }
 ```
 
-To fully enable PoP protocol we should also modify forkresolution algorithm. For these purpopses have been added few new function to the pop_service
-vbk/pop_service.hpp
+To fully enable PoP protocol we should also modify forkresolution algorithm. For these purpopses add few new function to the pop_service.\
+[<font style="color: red">vbk/pop_service.hpp</font>]
 ```diff
 +//! pop forkresolution
 +CBlockIndex *compareTipToBlock(CBlockIndex *candidate) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 +int compareForks(const CBlockIndex &left, const CBlockIndex &right) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 ```
-vbk/pop_service.cpp
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
     AssertLockHeld(cs_main);
@@ -3553,8 +3562,8 @@ int compareForks(const CBlockIndex &leftForkTip,
 }
 ```
 
-Also have been added two new functions and updated ActivateBestChain() function in the validation.hpp/cpp source files.
-validation.hpp
+Also add two new functions and updated ActivateBestChain() function in the validation.hpp/cpp source files.\
+[<font style="color: red">validation.hpp</font>]
 ```diff
 
 class CChainState {
@@ -3567,7 +3576,7 @@ class CChainState {
 ...
 };
 ```
-validation.cpp
+[<font style="color: red">validation.cpp</font>]
 ```diff
 bool CChainState::MarkBlockAsFinal(const Config &config,
                                    BlockValidationState &state,
@@ -3800,7 +3809,7 @@ ActivateBestChain() {
 }
 ```
 For the updated forkresolution algorithm we should also modify maintaining setBlockIndexCandidates set.
-validation.cpp
+[<font style="color: red">validation.cpp</font>]
 ```diff
 void CChainState::PruneBlockIndexCandidates() {
     // Note that we can't delete the current block itself, as we may need to
@@ -3910,7 +3919,7 @@ CheckBlockIndex() {
 }
 ```
 And the last stage is to update p2p protocol, allow node to download chain with the less chainWork.
-net_processing.cpp
+[<font style="color: red">net_processing.cpp</font>]
 ```diff
 struct CNodeState {
 ...
@@ -4094,7 +4103,7 @@ if (!pto->fClient &&
 +            }
 +        }
 ```
-version.h
+[<font style="color: red">version.h</font>]
 ```diff
 //! not banning for invalid compact blocks starts with this version
 static const int INVALID_CB_NO_BAN_VERSION = 70015;
@@ -4102,7 +4111,7 @@ static const int INVALID_CB_NO_BAN_VERSION = 70015;
 +//! VeriBlock: ping p2p msg contains 'best chain'
 +static const int PING_BESTCHAIN_VERSION = 80000;
 ```
-validation.cpp
+[<font style="color: red">validation.cpp</font>]
 ```diff
 AcceptBlock() {
 ...
@@ -4131,9 +4140,9 @@ AcceptBlock() {
 
 ## Add VeriBlock specific RPC methods
 
-So, generally main parts of the PoP protocol have been implemented. At this stage has been provide PoP related interaction with the bitcoin cash. For this have been added a few new functions to the RPC.
-So, have been added rpc_registry.hpp/cpp files.
-vbk/rpc_registry.hpp
+So, generally main parts of the PoP protocol have been implemented. At this stage has been provide PoP related interaction with the bitcoin cash. For this we have to add a few new functions to the RPC.
+Just add into the new rpc_registry.hpp/cpp source files.\
+[<font style="color: red">vbk/rpc_registry.hpp</font>]
 ```
 // Copyright (c) 2019-2020 Xenios SEZC
 // https://www.veriblock.org
@@ -4154,7 +4163,7 @@ void RegisterPOPMiningRPCCommands(CRPCTable& t);
 
 #endif //BITCOIN_SRC_VBK_RPC_REGISTER_HPP
 ```
-vbk/rpc_registry.cpp
+[<font style="color: red">vbk/rpc_registry.cpp</font>]
 ```
 #include <chainparams.h>
 #include <consensus/merkle.h>
@@ -4800,8 +4809,8 @@ void RegisterPOPMiningRPCCommands(CRPCTable &t) {
 
 } // namespace VeriBlock
 ```
-Also has been added json adapttor for the library.
-vbk/adaptors/univalue_json.hpp
+Also add json adapttor for the library, to parse the MempoolResult from the library to the UniValue object.\
+[<font style="color: red">vbk/adaptors/univalue_json.hpp</font>]
 ```
 
 #ifndef INTEGRATION_REFERENCE_BTC_JSON_HPP
@@ -4868,15 +4877,15 @@ namespace json {
 
 #endif // INTEGRATION_REFERENCE_BTC_JSON_HPP
 ```
-For the correct compiling all this files with the library functions has been updated serialize.h source file
-serialize
+For the correct compiling all this files with the library functions has been updated serialize.h source file.\
+[<font style="color: red">serialize.h</font>]
 ```diff
 +#include "vbk/adaptors/univalue_json.hpp"
  #include "veriblock/entities/altblock.hpp"
  #include "veriblock/entities/popdata.hpp"
 ```
-Also has been updated logging.h file, has been added PoP related log flag.
-logging.h
+Also update logging.h file, add PoP related log flag.\
+[<font style="color: red">logging.h</font>]
 ```diff
     LEVELDB = (1 << 20),
     VALIDATION = (1 << 21),
@@ -4884,8 +4893,8 @@ logging.h
 +   POP = (1 << 22),
     ALL = ~uint32_t(0),
 ```
-And the final step to add all these rpc functions to the RPC server.
-rpc/register.h
+And the final step to add all these rpc functions to the RPC server.\
+[<font style="color: red">rpc/register.h</font>]
 ```diff
 + #include <vbk/rpc_register.hpp>
 
@@ -4900,8 +4909,8 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t) {
 +   VeriBlock::RegisterPOPMiningRPCCommands(t);
 }
 ```
-And finally have been added tests for the PoP rpc functions.
-vbk/test/unit/rpc_service_tests.cpp
+And finally add tests for the PoP rpc functions.\
+[<font style="color: red">vbk/test/unit/rpc_service_tests.cpp</font>]
 ```
 #include <boost/test/unit_test.hpp>
 #include <chainparams.h>
@@ -4980,7 +4989,7 @@ BOOST_FIXTURE_TEST_CASE(submitpop_test, E2eFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 ```
-test/CMakeLists.txt
+[<font style="color: red">test/CMakeLists.txt</font>]
 ```diff
 		# VeriBlock Tests
 		../vbk/test/unit/e2e_pop_tests.cpp
@@ -4994,8 +5003,8 @@ test/CMakeLists.txt
 
 ## Adding VeriBlock payloads p2p broadcasting
 
-For the correct work of the veriblock pop mempool we should update and add new rules for the ATV, VTB, VBK and broadcast it through the network. All these functionality have been added to the p2p_sync.hpp, p2p_sync.cpp.
-vbk/p2p_sync.hpp
+For the correct work of the veriblock pop mempool we should update and add new rules for the ATV, VTB, VBK and broadcast it through the network. All these functionality add to the p2p_sync.hpp, p2p_sync.cpp.\
+[<font style="color: red">vbk/p2p_sync.hpp</font>]
 ```
 #ifndef BITCOIN_SRC_VBK_P2P_SYNC_HPP
 #define BITCOIN_SRC_VBK_P2P_SYNC_HPP
@@ -5110,7 +5119,7 @@ namespace p2p {
 
 #endif
 ```
-vbk/p2p_sync.cpp
+[<font style="color: red">vbk/p2p_sync.cpp</font>]
 ```
 #include "vbk/p2p_sync.hpp"
 #include <veriblock/entities/atv.hpp>
@@ -5373,8 +5382,8 @@ namespace p2p {
 } // namespace VeriBlock
 ```
 
-Have been defined mempool signal for the payloads broadcasting.
-vbk/pop_service.cpp
+Define mempool signal for the payloads broadcasting.\
+[<font style="color: red">vbk/pop_service.cpp</font>]
 ```diff
 +#include <vbk/p2p_sync.hpp>
 ...
@@ -5392,7 +5401,8 @@ void SetPop(CDBWrapper &db) {
 +        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
 }
 ```
-net_processing.cpp
+Update original net_processing with the maintaining of the VeriBlock data.\
+[<font style="color: red">net_processing.cpp</font>]
 ```diff
 +#include <vbk/p2p_sync.hpp>
 ...
@@ -5454,8 +5464,7 @@ SendMessages() {
 ...
 }
 ```
-
-Has been updated CMakeLists.txt
+[<font style="color: red">CMakeLists.txt</font>]
 ```diff
 add_library(server
 	vbk/pop_service.cpp
