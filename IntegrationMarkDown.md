@@ -3427,7 +3427,7 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 -    if (prevIndex == nullptr ||
 -        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
 +                               bool *mutated) {
-+    if (prevIndex == nullptr || Params().isPopEnabled(prevIndex->nHeight + 1)) {
++    if (prevIndex == nullptr || !Params().isPopEnabled(prevIndex->nHeight + 1)) {
         return BlockMerkleRoot(block);
     }
 ...

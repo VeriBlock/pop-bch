@@ -94,7 +94,8 @@ uint256 makeTopLevelRoot(int height, const KeystoneArray &keystones,
 
 uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
                            bool *mutated) {
-    if (prevIndex == nullptr || Params().isPopEnabled(prevIndex->nHeight + 1)) {
+    if (prevIndex == nullptr ||
+        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
         return BlockMerkleRoot(block);
     }
 
