@@ -276,7 +276,7 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
         return {};
     }
 
-    if (pindexPrev.nHeight < (int)cfg.alt->getPopPayoutDelay()) {
+    if (pindexPrev.nHeight < (int)cfg.alt->getPayoutParams().getPopPayoutDelay()) {
         return {};
     }
 

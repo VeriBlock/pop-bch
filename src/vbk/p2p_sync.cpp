@@ -180,8 +180,7 @@ namespace p2p {
         }
 
         altintegration::ValidationState state;
-        auto result =
-            pop_mempool.submit(std::make_shared<pop_t>(data), state, false);
+        auto result = pop_mempool.submit(std::make_shared<pop_t>(data), state);
         if (!result &&
             result.status == altintegration::MemPool::FAILED_STATELESS) {
             LogPrint(BCLog::NET, "peer %d sent invalid pop data: %s\n",

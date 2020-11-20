@@ -18,6 +18,18 @@ template <> inline UniValue ToJSON(const std::string &t) {
     return UniValue(t);
 }
 
+template <> inline UniValue ToJSON(const double &t) {
+    return UniValue(t);
+}
+
+template <> inline UniValue ToJSON(const uint32_t &t) {
+    return UniValue((uint64_t)t);
+}
+
+template <> inline UniValue ToJSON(const int &t) {
+    return UniValue((int64_t)t);
+}
+
 namespace json {
 
     template <> inline UniValue makeEmptyObject() {

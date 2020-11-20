@@ -3036,7 +3036,7 @@ Modify reward algorithm, to the basic PoW rewards has been added so called pop r
 +        return {};
 +    }
 
-+    if (pindexPrev.nHeight < (int)cfg.alt->getPopPayoutDelay()) {
++    if (pindexPrev.nHeight < (int)cfg.alt->getPayoutParams().getPopPayoutDelay()) {
 +        return {};
 +    }
 
@@ -3290,7 +3290,7 @@ BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
 
     // Generate a chain whith rewardInterval of blocks
     int rewardInterval =
-        (int)VeriBlock::GetPop().config->alt->getPopPayoutDelay();
+        (int)VeriBlock::GetPop().config->alt->getPayoutParams().getPopPayoutDelay();
     // do not add block with rewards
     // do not add block before block with rewards
     for (int i = 0; i < (rewardInterval - 2); i++) {
@@ -4828,6 +4828,18 @@ template <> inline UniValue ToJSON(const std::string &t) {
     return UniValue(t);
 }
 
+template <> inline UniValue ToJSON(const double &t) {
+    return UniValue(t);
+}
+
+template <> inline UniValue ToJSON(const uint32_t &t) {
+    return UniValue((uint64_t)t);
+}
+
+template <> inline UniValue ToJSON(const int &t) {
+    return UniValue((int64_t)t);
+}
+
 namespace json {
 
     template <> inline UniValue makeEmptyObject() {
@@ -5298,7 +5310,7 @@ namespace p2p {
         }
 
         altintegration::ValidationState state;
-        auto result = pop_mempool.submit(std::make_shared<pop_t>(data), state, false);
+        auto result = pop_mempool.submit(std::make_shared<pop_t>(data), state);
         if (!result && result.status == altintegration::MemPool::FAILED_STATELESS) {
             LogPrint(BCLog::NET, "peer %d sent invalid pop data: %s\n",
                      node->GetId(), state.toString());
