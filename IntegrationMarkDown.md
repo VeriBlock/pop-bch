@@ -1928,6 +1928,14 @@ struct E2eFixture : public TestChain100Setup {
         altintegration::SetLogger<TestLogger>();
         altintegration::GetLogger().level = altintegration::LogLevel::warn;
 
+        CScript scriptPubKey =
+        CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
+        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
+            CBlock b = CreateAndProcessBlock({}, scriptPubKey);
+            m_coinbase_txns.push_back(b.vtx[0]);
+        }
+
         pop = &VeriBlock::GetPop();
     }
 
@@ -2116,7 +2124,7 @@ TestChain100Setup::TestChain100Setup() {
 
 ```
 Modify miner_tests.cpp, disabled CreateNewBlock_validity test case.\
-[<font style="color: red">test/util/setup_common.cpp</font>]
+[<font style="color: red">test/util/miner_tests.cpp</font>]
 ```diff
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
