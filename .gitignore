@@ -129,3 +129,6 @@ contrib/devtools/split-debug.sh
 
 # vagrant
 .vagrant
+
+cmake-build-*
+.idea

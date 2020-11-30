@@ -27,9 +27,8 @@ BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
     }
 
     // Generate a chain whith rewardInterval of blocks
-    int rewardInterval = (int)VeriBlock::GetPop()
-                             .config->alt->getPayoutParams()
-                             .getPopPayoutDelay();
+    int rewardInterval =
+        (int)VeriBlock::GetPop().config->alt->getPopPayoutDelay();
     // do not add block with rewards
     // do not add block before block with rewards
     for (int i = 0; i < (rewardInterval - 2); i++) {
