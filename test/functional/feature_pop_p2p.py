@@ -100,10 +100,6 @@ class PopP2P(BitcoinTestFramework):
         self.nodes[0].add_p2p_connection(bn)
         time.sleep(2)
 
-        print(bn.executed_msg_offer_atv)
-        print(bn.executed_msg_offer_vtb)
-        print(bn.executed_msg_offer_vbk)
-
         assert bn.executed_msg_atv == 0
         assert bn.executed_msg_offer_atv == 1
         assert bn.executed_msg_offer_vbk == 1

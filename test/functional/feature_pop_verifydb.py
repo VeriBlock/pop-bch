@@ -49,6 +49,7 @@ class PoPVerifyDB(BitcoinTestFramework):
         from pypopminer import MockMiner
         self.apm = MockMiner()
         self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
+        self.sync_all()
         self.addrs = [x.getnewaddress() for x in self.nodes]
         self.endorsed_length = 100
 
