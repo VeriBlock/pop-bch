@@ -97,6 +97,8 @@ class TestNode():
         # This means that starting a bitcoind using the temp dir to debug a failed test won't
         # spam debug.log.
         self.default_args = [
+            "-popbtcnetwork=regtest",
+            "-popvbknetwork=regtest",
             "-datadir=" + self.datadir,
             "-logtimemicros",
             "-logthreadnames",
