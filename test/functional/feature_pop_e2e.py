@@ -26,7 +26,8 @@ class PopE2E(BitcoinTestFramework):
         self.extra_args = [[], []]
 
     def skip_test_if_missing_module(self):
-        pass
+        self.skip_if_no_wallet()
+        self.skip_if_no_pypopminer()
 
     def setup_network(self):
         self.setup_nodes()
@@ -77,9 +78,7 @@ class PopE2E(BitcoinTestFramework):
 
         containingblock = self.nodes[0].generate(nblocks=1)
         containingblock = self.nodes[0].getblock(containingblock[0])
-        
-        print(vbk_blocks_amount)
-        print(vtbs_amount)
+
         assert len(containingblock['pop']['data']['vtbs']) == vtbs_amount
         assert len(containingblock['pop']['data']['vbkblocks']) == vbk_blocks_amount + vtbs_amount + 1
 
@@ -115,14 +114,14 @@ class PopE2E(BitcoinTestFramework):
     def run_test(self):
         """Main test logic"""
 
-        self.sync_all(self.nodes)
         self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
+        self.sync_all(self.nodes)
 
         from pypopminer import MockMiner
 
         self.apm = MockMiner()
 
         self._test_case()
-       
+
 if __name__ == '__main__':
     PopE2E().main()

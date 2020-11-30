@@ -14,12 +14,12 @@ Node[2] is a control node.
 Expect that BTC/VBK tree state on nodes[0,1] is same as before shutdown (test against control node).
 """
 
-from test_framework.pop import endorse_block, create_endorsed_chain
+from test_framework.pop import create_endorsed_chain
 from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
-    disconnect_nodes, assert_equal,
+    assert_equal,
 )
 
 
