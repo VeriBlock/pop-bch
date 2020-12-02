@@ -21,6 +21,8 @@ on:
 jobs:
   linux-native:
     runs-on: ubuntu-latest
+    env:
+      BUILD_TYPE: Release
     steps:
       - name: checkout
         uses: actions/checkout@v2
@@ -55,8 +57,6 @@ jobs:
       - name: install dependencies
         run: sudo apt-get install libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb4.8-dev libdb4.8++-dev
       - name: install veriblock-pop-cpp
-        env:
-          BUILD_TYPE: Release
         run: |
           (
           cd /opt;
@@ -69,19 +69,14 @@ jobs:
           make -j2;
           sudo make install
           )
-      - name: autogen
-        run: ./autogen.sh
-      - name: configure
-        run: ./configure
-          --without-gui
-          --enable-werror
-          --disable-bench
+      - name: cmake
+        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install
       - name: make
-        run: make -j2 deploy
+        run: cmake --build build -- -j2 install
       - name: create artifacts
         if: success()
         run: |
-          mv ./release vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
+          mv ./install vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
           tar czvf vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-linux-x64.tar.gz vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}/
       - name: upload artifacts
         if: success()
@@ -146,18 +141,10 @@ jobs:
         run: sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
       - name: strip out problematic Windows %PATH% imported var
         run: PATH=$(echo "$PATH" | sed -e 's/:\/mnt.*//g')
-      - name: set variables and build dependencies for x86_64-w64
-        env:
-          BUILD_TYPE: Release
-          HOST: x86_64-w64-mingw32
-          BASE_CACHE: ~/.depends_cache
-        run: cd depends && make -j2
-      - name: autogen
-        run: ./autogen.sh
-      - name: configure
-        run: CONFIG_SITE=$PWD/depends/x86_64-w64-mingw32/share/config.site ./configure --prefix=/
-          --enable-werror
-          --disable-bench
+      - name: cmake
+        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install
+      - name: make
+        run: cmake --build build -- -j2 install
       - name: make
         run: make -j2
       - name: make deploy
@@ -166,8 +153,7 @@ jobs:
       - name: create artifacts
         if: success()
         run: |
-          mv ./vbitcoin-0.19.99-win64-setup-unsigned.exe release/
-          mv ./release vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
+          mv ./install vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
           zip -r9 vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-win64-qt.zip vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
       - name: upload artifacts
         if: success()
