@@ -488,7 +488,7 @@ public:
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork =
-            ChainParamsConstants::TESTNET_MINIMUM_CHAIN_WORK;
+            uint256S("0000000000000000000000000000000000000000000001db6ec4ac88cf2272c6");
 
         // By default assume that the signatures in ancestors of this block are
         // valid.

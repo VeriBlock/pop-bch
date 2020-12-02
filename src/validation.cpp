@@ -2086,7 +2086,9 @@ void CChainState::PruneAndFlush() {
 }
 
 /** Check warning conditions and do some notifications on new chain tip set. */
-static void UpdateTip(const CChainParams &params, CBlockIndex *pindexNew) {
+static void UpdateTip(const CChainParams &params, CBlockIndex *pindexNew)
+EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+{
     // New best block
     g_mempool.AddTransactionsUpdated(1);
 
@@ -2100,16 +2102,23 @@ static void UpdateTip(const CChainParams &params, CBlockIndex *pindexNew) {
     bool ret = VeriBlock::setState(pindexNew->GetBlockHash(), state);
     assert(ret && "block has been checked previously and should be valid");
 
-    LogPrintf("%s: new best=%s height=%d version=0x%08x log2_work=%.8g tx=%ld "
-              "date='%s' progress=%f cache=%.1fMiB(%utxo)\n",
-              __func__, pindexNew->GetBlockHash().ToString(),
-              pindexNew->nHeight, pindexNew->nVersion,
-              log(pindexNew->nChainWork.getdouble()) / log(2.0),
-              pindexNew->GetChainTxCount(),
-              FormatISO8601DateTime(pindexNew->GetBlockTime()),
-              GuessVerificationProgress(params.TxData(), pindexNew),
-              pcoinsTip->DynamicMemoryUsage() * (1.0 / (1 << 20)),
-              pcoinsTip->GetCacheSize());
+    auto& pop = VeriBlock::GetPop();
+    auto* vbktip = pop.altTree->vbk().getBestChain().tip();
+    auto* btctip = pop.altTree->btc().getBestChain().tip();
+    LogPrintf(
+        "%s: new best=ALT:%d:%s %s %s version=0x%08x log2_work=%.8g tx=%ld "
+        "date='%s' progress=%f cache=%.1fMiB(%utxo)\n",
+        __func__,
+        pindexNew->nHeight,
+        pindexNew->GetBlockHash().ToString(),
+        (vbktip ? vbktip->toShortPrettyString() : "VBK:nullptr"),
+        (btctip ? btctip->toShortPrettyString() : "BTC:nullptr"),
+        pindexNew->nVersion, log(pindexNew->nChainWork.getdouble()) / log(2.0),
+        pindexNew->GetChainTxCount(),
+        FormatISO8601DateTime(pindexNew->GetBlockTime()),
+        GuessVerificationProgress(params.TxData(), pindexNew),
+        pcoinsTip->DynamicMemoryUsage() * (1.0 / (1 << 20)),
+        pcoinsTip->GetCacheSize());
 }
 
 /**

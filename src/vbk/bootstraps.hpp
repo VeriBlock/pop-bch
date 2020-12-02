@@ -35,7 +35,7 @@ struct AltChainParamsVBITCASH : public altintegration::AltChainParams {
         return bootstrap;
     }
 
-    int64_t getIdentifier() const noexcept override { return 0x3ae6ca; }
+    int64_t getIdentifier() const noexcept override { return 1; }
 
     std::vector<uint8_t>
     getHash(const std::vector<uint8_t> &bytes) const noexcept override;
