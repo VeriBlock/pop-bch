@@ -7,7 +7,6 @@ on:
       - master
       - release/*
       - trunk/*
-      - veriblock-pop-integration
 
   pull_request:
     branches:
@@ -69,10 +68,9 @@ jobs:
       - name: install jemalloc
         run: |
           cd /opt
-          git clone https://github.com/jemalloc/jemalloc.git
+          git clone -b 5.2.1 https://github.com/jemalloc/jemalloc.git
           cd jemalloc
-          git checkout 5.2.1
-          ./autogen
+          ./autogen.sh
           make -j
           sudo make install
       - name: cmake
