@@ -461,7 +461,7 @@ public:
         // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
         consensus.CSVHeight = 770112;
         consensus.powLimit = uint256S(
-            "000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+            "0000007fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
         consensus.nPowTargetSpacing = 10 * 60;
