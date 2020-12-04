@@ -24,6 +24,13 @@ extern KeystoneArray
 getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev);
 
 namespace {
+    void checkPopActivation() {
+        auto h = ::ChainActive().Height();
+        if(!Params().isPopEnabled(h)) {
+            throw std::runtime_error("This RPC is disabled, because POP is not activated. Will be active at height=" + std::to_string(h));
+        }
+    }
+
 
     BlockHash GetBlockHashByHeight(const int height) {
         if (height < 0 || height > ChainActive().Height())
@@ -158,6 +165,8 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
 }
 
 UniValue submitpop(const Config &config, const JSONRPCRequest &request) {
+    checkPopActivation();
+
     if (request.fHelp || request.params.size() > 3)
         throw std::runtime_error(
             "submitpop [vbk_blocks] [vtbs] [atvs]\n"
@@ -201,16 +210,6 @@ UniValue submitpop(const Config &config, const JSONRPCRequest &request) {
 
         return altintegration::ToJSON<UniValue>(result);
     }
-}
-
-UniValue debugpop(const Config &config, const JSONRPCRequest &request) {
-    if (request.fHelp) {
-        throw std::runtime_error("debugpop\n"
-                                 "\nPrints alt-cpp-lib state into log.\n");
-    }
-    auto &pop = VeriBlock::GetPop();
-    LogPrint(BCLog::POP, "%s", VeriBlock::toPrettyString(pop));
-    return UniValue();
 }
 
 using VbkTree = altintegration::VbkBlockTree;
@@ -622,7 +621,6 @@ namespace {
 const CRPCCommand commands[] = {
     {"pop_mining", "submitpop", submitpop, {"atv", "vtbs"}},
     {"pop_mining", "getpopdata", getpopdata, {"blockheight"}},
-    {"pop_mining", "debugpop", debugpop, {}},
     {"pop_mining", "getvbkblock", getvbkblock, {"hash"}},
     {"pop_mining", "getbtcblock", getbtcblock, {"hash"}},
     {"pop_mining", "getvbkbestblockhash", getvbkbestblockhash, {}},
