@@ -299,7 +299,6 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
 
         if ((rewardValue != 0) && (halving < 64)) {
             CScript key = CScript(r.first.begin(), r.first.end());
-            printf("getPopRewards() key: %s \n", HexStr(key).c_str());
             btcRewards[key] = param.PopRewardCoefficient() * rewardValue;
         }
     }
