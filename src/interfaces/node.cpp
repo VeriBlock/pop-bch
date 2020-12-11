@@ -36,6 +36,7 @@
 #endif
 
 #include <univalue.h>
+#include <vbk/bootstraps.hpp>
 
 class HTTPRPCRequestProcessor;
 class CWallet;
@@ -81,6 +82,7 @@ namespace {
         }
         void selectParams(const std::string &network) override {
             SelectParams(network);
+            VeriBlock::selectPopConfig(gArgs);
         }
         uint64_t getAssumedBlockchainSize() override {
             return Params().AssumedBlockchainSize();

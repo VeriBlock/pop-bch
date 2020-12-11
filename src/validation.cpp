@@ -1338,6 +1338,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
     }
 
     altintegration::ValidationState state;
+    AssertLockHeld(cs_main);
     VeriBlock::setState(block.hashPrevBlock, state);
 
     // Move best block pointer to previous block.
