@@ -3,82 +3,60 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SRC_VBK_POP_SERVICE_HPP
-#define BITCOIN_SRC_VBK_POP_SERVICE_HPP
+#ifndef BCH_SRC_VBK_POP_SERVICE_HPP
+#define BCH_SRC_VBK_POP_SERVICE_HPP
 
-#include <consensus/validation.h>
-#include <validation.h>
-
-#include <vbk/adaptors/block_batch_adaptor.hpp>
+#include "pop_common.hpp"
 #include <vbk/adaptors/payloads_provider.hpp>
-#include <vbk/pop_common.hpp>
-#include <vbk/util.hpp>
 
-/** Amount in satoshis (Can be negative) */
-typedef int64_t CAmount;
-
-class CBlockIndex;
+class BlockValidationState;
 class CBlock;
-class CScript;
 class CBlockTreeDB;
+class CBlockIndex;
 class CDBIterator;
 class CDBWrapper;
-class BlockValidationState;
+class CChainParams;
+
+namespace Consensus {
+struct Params;
+}
 
 namespace VeriBlock {
 
 using BlockBytes = std::vector<uint8_t>;
-using PoPRewards = std::map<CScript, CAmount>;
+using PoPRewards = std::map<CScript, int64_t>;
 
-void SetPop(CDBWrapper &db);
+void InitPopContext(CDBWrapper& db);
 
-PayloadsProvider &GetPayloadsProvider();
+CBlockIndex* compareTipToBlock(CBlockIndex* candidate);
+bool acceptBlock(const CBlockIndex& indexNew, BlockValidationState& state);
+bool checkPopDataSize(const altintegration::PopData& popData, altintegration::ValidationState& state);
+bool addAllBlockPayloads(const CBlock& block, BlockValidationState& state);
+bool setState(const uint256& block, altintegration::ValidationState& state);
 
-//! returns true if all tips are stored in database, false otherwise
-bool hasPopData(CBlockTreeDB &db);
-void saveTrees(altintegration::BlockBatchAdaptor &batch);
-bool loadTrees(CDBIterator &iter);
-
-//! pop rewards
-PoPRewards getPopRewards(const CBlockIndex &pindexPrev)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
-                                 const CBlockIndex &pindexPrev)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
-                                   const CBlockIndex &pindexPrev,
-                                   const Consensus::Params &consensusParams,
-                                   Amount &blockReward,
-                                   BlockValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height);
-
-//! pop forkresolution
-CBlockIndex *compareTipToBlock(CBlockIndex *candidate)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-int compareForks(const CBlockIndex &left, const CBlockIndex &right)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-//! alttree methods
-bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-bool setState(const BlockHash &hash, altintegration::ValidationState &state)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-//! mempool methods
-altintegration::PopData getPopData() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-void removePayloadsFromMempool(const altintegration::PopData &popData)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-void updatePopMempoolForReorg() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-void addDisconnectedPopdata(const altintegration::PopData &popData)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+PoPRewards getPopRewards(const CBlockIndex& pindexPrev, const CChainParams& params);
+void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIndex& pindexPrev, const CChainParams& params);
+bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const Amount& nFees, const CBlockIndex& pindex, const CChainParams& params, Amount &blockReward, BlockValidationState& state);
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks);
 std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks);
 
+//! returns true if all tips are stored in database, false otherwise
+bool hasPopData(CBlockTreeDB& db);
+altintegration::PopData getPopData(const CBlockIndex& prev);
+void saveTrees(CDBBatch* batch);
+bool loadTrees(CDBWrapper& db);
+
+void removePayloadsFromMempool(const altintegration::PopData& popData);
+
+int compareForks(const CBlockIndex& left, const CBlockIndex& right);
+
+Amount getCoinbaseSubsidy(const Amount& subsidy, int32_t height, const CChainParams& params);
+
+void addDisconnectedPopdata(const altintegration::PopData& popData);
+
+bool isPopEnabled();
+
 } // namespace VeriBlock
 
-#endif
+#endif //BCH_SRC_VBK_POP_SERVICE_HPP

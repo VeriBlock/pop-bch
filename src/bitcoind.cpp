@@ -24,8 +24,7 @@
 #include <util/translation.h>
 
 #include <functional>
-
-#include "vbk/bootstraps.hpp"
+#include <vbk/params.hpp>
 
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
 
@@ -119,7 +118,7 @@ static bool AppInit(int argc, char *argv[]) {
         try {
             SelectParams(gArgs.GetChainName());
             // VeriBlock
-            VeriBlock::selectPopConfig(gArgs);
+            VeriBlock::selectPopConfig(gArgs.GetChainName());
             node.chain = interfaces::MakeChain(node, config.GetChainParams());
         } catch (const std::exception &e) {
             return InitError(strprintf("%s\n", e.what()));

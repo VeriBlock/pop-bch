@@ -251,10 +251,10 @@ bool CBlockTreeDB::WriteBatchSync(
                     CDiskBlockIndex(*it));
     }
 
-    // write BTC/VBK/ALT blocks
-    auto adaptor = VeriBlock::BlockBatchAdaptor(batch);
-    VeriBlock::saveTrees(adaptor);
-
+    if (VeriBlock::isPopEnabled()) {
+        // write BTC/VBK/ALT blocks
+        VeriBlock::saveTrees(&batch);
+    }
     return WriteBatch(batch, true);
 }
 

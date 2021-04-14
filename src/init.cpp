@@ -60,6 +60,7 @@
 #include <validationinterface.h>
 #include <walletinitinterface.h>
 
+#include <vbk/log.hpp>
 #include <vbk/pop_service.hpp>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -224,6 +225,7 @@ void Shutdown(NodeContext &node) {
     }
     threadGroup.interrupt_all();
     threadGroup.join_all();
+    VeriBlock::StopPop();
 
     // After the threads that potentially access these pointers have been
     // stopped, destruct and reset all to nullptr.
@@ -1540,6 +1542,11 @@ void InitLogging() {
         gArgs.GetBoolArg("-logtimemicros", DEFAULT_LOGTIMEMICROS);
     LogInstance().m_log_threadnames =
         gArgs.GetBoolArg("-logthreadnames", DEFAULT_LOGTHREADNAMES);
+    LogInstance().EnableCategory(BCLog::POP);
+
+    std::string poplogverbosity = gArgs.GetArg("-poplogverbosity", "warn");
+    altintegration::SetLogger<VeriBlock::BCHLogger>();
+    altintegration::GetLogger().level = altintegration::StringToLevel(poplogverbosity);
 
     fLogIPs = gArgs.GetBoolArg("-logips", DEFAULT_LOGIPS);
 
@@ -2414,7 +2421,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                 pblocktree.reset();
                 pblocktree.reset(
                     new CBlockTreeDB(nBlockTreeDBCache, false, fReset));
-                VeriBlock::SetPop(*pblocktree);
+                VeriBlock::InitPopContext(*pblocktree);
 
                 if (fReset) {
                     pblocktree->WriteReindexing(true);
@@ -2806,22 +2813,19 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
         },
         DUMP_BANS_INTERVAL);
 
-    {
-        auto &pop = VeriBlock::GetPop();
-        auto *tip = ChainActive().Tip();
+    if (VeriBlock::isPopEnabled()) {
+        auto& pop = VeriBlock::GetPop();
+        auto* tip = ChainActive().Tip();
         altintegration::ValidationState state;
         LOCK(cs_main);
         bool ret = VeriBlock::setState(tip->GetBlockHash(), state);
-        auto *alttip = pop.altTree->getBestChain().tip();
+        auto* alttip = pop.getAltBlockTree().getBestChain().tip();
         assert(ret && "bad state");
         assert(tip->nHeight == alttip->getHeight());
 
-        LogPrintf("ALT tree best height = %d\n",
-                  pop.altTree->getBestChain().tip()->getHeight());
-        LogPrintf("VBK tree best height = %d\n",
-                  pop.altTree->vbk().getBestChain().tip()->getHeight());
-        LogPrintf("BTC tree best height = %d\n",
-                  pop.altTree->btc().getBestChain().tip()->getHeight());
+        LogPrintf("ALT tree best height = %d\n", pop.getAltBlockTree().getBestChain().tip()->getHeight());
+        LogPrintf("VBK tree best height = %d\n", pop.getVbkBlockTree().getBestChain().tip()->getHeight());
+        LogPrintf("BTC tree best height = %d\n", pop.getBtcBlockTree().getBestChain().tip()->getHeight());
     }
 
     // Start Avalanche's event loop.

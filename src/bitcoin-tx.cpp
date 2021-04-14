@@ -29,7 +29,7 @@
 #include <functional>
 #include <memory>
 
-#include "vbk/bootstraps.hpp"
+#include <vbk/params.hpp>
 
 static bool fCreateBlank;
 static std::map<std::string, UniValue> registers;
@@ -122,7 +122,7 @@ static int AppInitRawTx(int argc, char *argv[]) {
     try {
         SelectParams(gArgs.GetChainName());
         // VeriBlock
-        VeriBlock::selectPopConfig(gArgs);
+        VeriBlock::selectPopConfig(gArgs.GetChainName());
     } catch (const std::exception &e) {
         tfm::format(std::cerr, "Error: %s\n", e.what());
         return EXIT_FAILURE;

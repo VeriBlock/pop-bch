@@ -5,39 +5,44 @@
 #include <serialize.h>
 #include <util/validation.h>
 #include <validation.h>
-#include <vbk/entity/context_info_container.hpp>
+#include <vbk/p2p_sync.hpp>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h> // for CWallet
 
 #include <fstream>
 #include <set>
 
-#include <vbk/adaptors/univalue_json.hpp>
+#include "rpc_register.hpp"
 #include <vbk/merkle.hpp>
 #include <vbk/pop_service.hpp>
-#include <vbk/rpc_register.hpp>
-#include <veriblock/mempool_result.hpp>
+#include <vbk/util.hpp>
+#include <veriblock/pop.hpp>
 
 namespace VeriBlock {
 
-extern KeystoneArray
-getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev);
-
 namespace {
-    void checkPopActivation() {
-        auto h = ::ChainActive().Height();
-        if(!Params().isPopEnabled(h)) {
-            throw std::runtime_error("This RPC is disabled, because POP is not activated. Will be active at height=" + std::to_string(h));
+    void EnsurePopEnabled()
+    {
+        if (!VeriBlock::isPopEnabled()) {
+            throw JSONRPCError(RPC_MISC_ERROR,
+                strprintf("POP protocol is not enabled. Current=%d, bootstrap height=%d",
+                    ChainActive().Height(),
+                    VeriBlock::GetPop().getConfig().getAltParams().getBootstrapBlock().getHeight())
+            );
         }
     }
 
+    void EnsurePopActive()
+    {
+        auto tipheight = ChainActive().Height();
+        if (!Params().isPopActive(tipheight)) {
+            throw JSONRPCError(RPC_MISC_ERROR,
+                strprintf("POP protocol is not active. Current=%d, activation height=%d",
+                    tipheight,
+                    Params().GetConsensus().VeriBlockPopSecurityHeight)
 
-    BlockHash GetBlockHashByHeight(const int height) {
-        if (height < 0 || height > ChainActive().Height())
-            throw JSONRPCError(RPC_INVALID_PARAMETER,
-                               "Block height out of range");
-
-        return ChainActive()[height]->GetBlockHash();
+            );
+        }
     }
 
     CBlock GetBlockChecked(const CBlockIndex *pblockindex) {
@@ -61,10 +66,54 @@ namespace {
 
 } // namespace
 
-UniValue getpopdata(const Config &config, const JSONRPCRequest &request) {
+// getpopdata
+namespace {
+
+UniValue getpopdata(const CBlockIndex* index)
+{
+    if (!index) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+    }
+
+    UniValue result(UniValue::VOBJ);
+
+    CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
+    ssBlock << index->GetBlockHeader();
+    result.pushKV("block_header", HexStr(ssBlock));
+
+    auto block = GetBlockChecked(index);
+
+    auto txRoot = BlockMerkleRoot(block).asVector();
+    using altintegration::AuthenticatedContextInfoContainer;
+    auto authctx = AuthenticatedContextInfoContainer::createFromPrevious(
+        txRoot,
+        block.popData.getMerkleRoot(),
+        // we build authctx based on previous block
+        VeriBlock::GetAltBlockIndex(index->pprev),
+        VeriBlock::GetPop().getConfig().getAltParams());
+    result.pushKV("authenticated_context", altintegration::ToJSON<UniValue>(authctx));
+
+    auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
+    UniValue univalueLastVBKBlocks(UniValue::VARR);
+    for (const auto& b : lastVBKBlocks) {
+        univalueLastVBKBlocks.push_back(HexStr(b));
+    }
+    result.pushKV("last_known_veriblock_blocks", univalueLastVBKBlocks);
+
+    auto lastBTCBlocks = VeriBlock::getLastKnownBTCBlocks(16);
+    UniValue univalueLastBTCBlocks(UniValue::VARR);
+    for (const auto& b : lastBTCBlocks) {
+        univalueLastBTCBlocks.push_back(HexStr(b));
+    }
+    result.pushKV("last_known_bitcoin_blocks", univalueLastBTCBlocks);
+
+    return result;
+}
+
+UniValue getpopdatabyheight(const Config &, const JSONRPCRequest &request) {
     if (request.fHelp || request.params.size() != 1)
         throw std::runtime_error(
-            "getpopdata block_height\n"
+            "getpopdatabyheight block_height\n"
             "\nFetches the data relevant to PoP-mining the given block.\n"
             "\nArguments:\n"
             "1. block_height         (numeric, required) The height index\n"
@@ -87,58 +136,59 @@ UniValue getpopdata(const Config &config, const JSONRPCRequest &request) {
             "       ... ]\n"
             "}\n"
             "\nExamples:\n" +
-            HelpExampleCli("getpopdata", "1000") +
-            HelpExampleRpc("getpopdata", "1000"));
+            HelpExampleCli("getpopdatabyheight", "1000") +
+            HelpExampleRpc("getpopdatabyheight", "1000"));
+
+    EnsurePopEnabled();
+
+    auto wallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(wallet.get(), request.fHelp)) {
+        return NullUniValue;
+    }
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    wallet->BlockUntilSyncedToCurrentChain();
 
     int height = request.params[0].get_int();
 
     LOCK(cs_main);
-
-    BlockHash blockhash = GetBlockHashByHeight(height);
-
-    UniValue result(UniValue::VOBJ);
-
-    // get the block and its header
-    const CBlockIndex *pBlockIndex = LookupBlockIndex(blockhash);
-
-    if (!pBlockIndex) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
-    }
-
-    CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
-    ssBlock << pBlockIndex->GetBlockHeader();
-    result.pushKV("block_header", HexStr(ssBlock));
-
-    auto block = GetBlockChecked(pBlockIndex);
-
-    // context info
-    uint256 txRoot = BlockMerkleRoot(block);
-    auto keystones =
-        VeriBlock::getKeystoneHashesForTheNextBlock(pBlockIndex->pprev);
-
-    auto contextInfo = VeriBlock::ContextInfoContainer(pBlockIndex->nHeight,
-                                                       keystones, txRoot);
-    auto authedContext = contextInfo.getAuthenticated();
-    result.pushKV("raw_contextinfocontainer",
-                  HexStr(authedContext.begin(), authedContext.end()));
-
-    auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
-
-    UniValue univalueLastVBKBlocks(UniValue::VARR);
-    for (const auto &b : lastVBKBlocks) {
-        univalueLastVBKBlocks.push_back(HexStr(b));
-    }
-    result.pushKV("last_known_veriblock_blocks", univalueLastVBKBlocks);
-
-    auto lastBTCBlocks = VeriBlock::getLastKnownBTCBlocks(16);
-    UniValue univalueLastBTCBlocks(UniValue::VARR);
-    for (const auto &b : lastBTCBlocks) {
-        univalueLastBTCBlocks.push_back(HexStr(b));
-    }
-    result.pushKV("last_known_bitcoin_blocks", univalueLastBTCBlocks);
-
-    return result;
+    return getpopdata(ChainActive()[height]);
 }
+
+UniValue getpopdatabyhash(const Config &, const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "getpopdatabyhash block_height\n"
+            "\nFetches the data relevant to PoP-mining the given block.\n"
+            "\nArguments:\n"
+            "1. hash         (string, required) Endorsed block hash.\n"
+            "\nResult:\n"
+            "TODO: write docs\n"
+            "}\n"
+            "\nExamples:\n" +
+            HelpExampleCli("getpopdatabyhash", "xxx") + HelpExampleRpc("getpopdatabyhash", "xxx"));
+
+    EnsurePopEnabled();
+
+    auto wallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(wallet.get(), request.fHelp)) {
+        return NullUniValue;
+    }
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    wallet->BlockUntilSyncedToCurrentChain();
+
+    std::string hex = request.params[0].get_str();
+    LOCK(cs_main);
+
+    const auto hash = uint256S(hex);
+    return getpopdata(LookupBlockIndex(BlockHash(hash)));
+}
+
+} // namespace
 
 template <typename pop_t>
 bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
@@ -154,7 +204,8 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
             ParseHexV(payloads_hex, strprintf("%s[%d]", pop_t::name(), idx));
 
         pop_t data;
-        if (!altintegration::Deserialize(payloads_bytes, data, state)) {
+        altintegration::ReadStream stream(payloads_bytes);
+        if (!altintegration::DeserializeFromVbkEncoding(stream, data, state)) {
             return state.Invalid("bad-payloads");
         }
         payloads.push_back(data);
@@ -164,64 +215,90 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
     return true;
 }
 
-UniValue submitpop(const Config &config, const JSONRPCRequest &request) {
-    checkPopActivation();
-
-    if (request.fHelp || request.params.size() > 3)
-        throw std::runtime_error(
-            "submitpop [vbk_blocks] [vtbs] [atvs]\n"
-            "\nCreates and submits a PoP transaction constructed from the "
-            "provided ATV and VTBs.\n"
-            "\nArguments:\n"
-            "1. vbk_blocks      (array, required) Array of hex-encoded "
-            "VbkBlocks records.\n"
-            "2. vtbs      (array, required) Array of hex-encoded VTB records.\n"
-            "3. atvs      (array, required) Array of hex-encoded ATV records.\n"
-            "\nResult:\n"
-            "             (string) MempoolResult\n"
-            "\nExamples:\n" +
-            HelpExampleCli(
-                "submitpop",
-                " [VBK_HEX VBK_HEX] [VTB_HEX VTB_HEX] [ATV_HEX ATV_HEX]") +
-            HelpExampleRpc("submitpop", "[VBK_HEX] [] [ATV_HEX ATV_HEX]"));
-
-    RPCTypeCheck(request.params,
-                 {UniValue::VARR, UniValue::VARR, UniValue::VARR});
-
-    altintegration::PopData popData;
-    altintegration::ValidationState state;
-    bool ret = true;
-    ret = ret && parsePayloads<altintegration::VbkBlock>(
-                     request.params[0].get_array(), popData.context, state);
-    ret = ret && parsePayloads<altintegration::VTB>(
-                     request.params[1].get_array(), popData.vtbs, state);
-    ret = ret && parsePayloads<altintegration::ATV>(
-                     request.params[2].get_array(), popData.atvs, state);
-
-    if (!ret) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, state.GetPath());
-    }
-
-    {
-        LOCK(cs_main);
-        auto &pop_mempool = *VeriBlock::GetPop().mempool;
-
-        altintegration::MempoolResult result = pop_mempool.submitAll(popData);
-
-        return altintegration::ToJSON<UniValue>(result);
+template <typename T>
+static void logSubmitResult(const std::string idhex, const altintegration::MemPool::SubmitResult& result, const altintegration::ValidationState& state)
+{
+    if (!result.isAccepted()) {
+        LogPrintf("rejected to add %s=%s to POP mempool: %s\n", T::name(), idhex, state.toString());
+    } else {
+        auto s = strprintf("(state: %s)", state.toString());
+        LogPrintf("accepted %s=%s to POP mempool %s\n", T::name(), idhex, (state.IsValid() ? "" : s));
     }
 }
 
 using VbkTree = altintegration::VbkBlockTree;
 using BtcTree = altintegration::VbkBlockTree::BtcTree;
 
-static VbkTree &vbk() {
-    return VeriBlock::GetPop().altTree->vbk();
+static const VbkTree& vbk()
+{
+    return VeriBlock::GetPop().getVbkBlockTree();
 }
 
-static BtcTree &btc() {
-    return VeriBlock::GetPop().altTree->btc();
+static const BtcTree& btc()
+{
+    return VeriBlock::GetPop().getBtcBlockTree();
 }
+
+// submitpop
+namespace {
+void check_submitpop(const JSONRPCRequest& request, const std::string& popdata)
+{
+    auto cmdname = strprintf("submitpop%s", popdata);
+    RPCHelpMan{
+        cmdname,
+        "Submit " + popdata,
+        {
+            {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Serialized " + popdata},
+        },
+        {},
+        RPCExamples{
+            HelpExampleCli(cmdname, "\"<hex>\"") +
+            HelpExampleRpc(cmdname, "\"<hex>\"")},
+    }
+    .Check(request);
+}
+
+template <typename Pop>
+UniValue submitpopIt(const JSONRPCRequest& request)
+{
+    check_submitpop(request, Pop::name());
+
+    EnsurePopEnabled();
+    EnsurePopActive();
+
+    auto payloads_bytes = ParseHexV(request.params[0].get_str(), Pop::name());
+
+    Pop data;
+    altintegration::ReadStream stream(payloads_bytes);
+    altintegration::ValidationState state;
+    if (!altintegration::DeserializeFromVbkEncoding(stream, data, state)) {
+        return state.Invalid("bad-data");
+    }
+
+    LOCK(cs_main);
+    auto& mp = VeriBlock::GetPop().getMemPool();
+    auto idhex = data.getId().toHex();
+    auto result = mp.submit<Pop>(data, state);
+    logSubmitResult<Pop>(idhex, result, state);
+
+    bool accepted = result.isAccepted();
+    return altintegration::ToJSON<UniValue>(state, &accepted);
+}
+
+UniValue submitpopatv(const Config &, const JSONRPCRequest& request)
+{
+    return submitpopIt<altintegration::ATV>(request);
+}
+UniValue submitpopvtb(const Config &, const JSONRPCRequest& request)
+{
+    return submitpopIt<altintegration::VTB>(request);
+}
+UniValue submitpopvbk(const Config &, const JSONRPCRequest& request)
+{
+    return submitpopIt<altintegration::VbkBlock>(request);
+}
+
+} // namespace
 
 // getblock
 namespace {
@@ -247,24 +324,47 @@ namespace {
     }
 
     template <typename Tree>
+    const typename Tree::index_t* GetBlockIndex(const Tree& tree, std::string hex)
+    {
+        auto data = ParseHex(hex);
+        using hash_t = typename Tree::hash_t;
+        hash_t hash = data;
+        return tree.getBlockIndex(hash);
+    }
+
+    template <>
+    const VbkTree::index_t* GetBlockIndex(const VbkTree& tree, std::string hex)
+    {
+        auto data = ParseHex(hex);
+        using block_t = VbkTree::block_t;
+        using hash_t = block_t::hash_t;
+        using prev_hash_t = block_t::prev_hash_t;
+        if (data.size() == hash_t::size()) {
+            // it is a full hash
+            hash_t h = data;
+            return tree.getBlockIndex(h);
+        }
+        if (data.size() == prev_hash_t::size()) {
+            // it is an id
+            prev_hash_t h = data;
+            return tree.getBlockIndex(h);
+        }
+
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Wrong hash size");
+        return nullptr;
+    }
+
+    template <typename Tree>
     UniValue getblock(const JSONRPCRequest &req, Tree &tree,
                       const std::string &chain) {
         check_getblock(req, chain);
+
+        EnsurePopEnabled();
+
         LOCK(cs_main);
 
-        using block_t = typename Tree::block_t;
-        using hash_t = typename block_t::hash_t;
         std::string strhash = req.params[0].get_str();
-        hash_t hash;
-
-        try {
-            hash = hash_t::fromHex(strhash);
-        } catch (const std::exception &e) {
-            throw JSONRPCError(RPC_TYPE_ERROR,
-                               strprintf("Bad hash: %s", e.what()));
-        }
-
-        auto *index = tree.getBlockIndex(hash);
+        auto* index = GetBlockIndex(tree, strhash);
         if (!index) {
             // no block found
             return UniValue(UniValue::VNULL);
@@ -273,10 +373,10 @@ namespace {
         return altintegration::ToJSON<UniValue>(*index);
     }
 
-    UniValue getvbkblock(const Config &config, const JSONRPCRequest &req) {
+    UniValue getvbkblock(const Config &, const JSONRPCRequest &req) {
         return getblock(req, vbk(), "vbk");
     }
-    UniValue getbtcblock(const Config &config, const JSONRPCRequest &req) {
+    UniValue getbtcblock(const Config &, const JSONRPCRequest &req) {
         return getblock(req, btc(), "btc");
     }
 
@@ -304,6 +404,8 @@ namespace {
                               const std::string &chain) {
         check_getbestblockhash(request, chain);
 
+        EnsurePopEnabled();
+
         LOCK(cs_main);
         auto *tip = tree.getBestChain().tip();
         if (!tip) {
@@ -314,12 +416,12 @@ namespace {
         return UniValue(tip->getHash().toHex());
     }
 
-    UniValue getvbkbestblockhash(const Config &config,
+    UniValue getvbkbestblockhash(const Config &,
                                  const JSONRPCRequest &request) {
         return getbestblockhash(request, vbk(), "vbk");
     }
 
-    UniValue getbtcbestblockhash(const Config &config,
+    UniValue getbtcbestblockhash(const Config &,
                                  const JSONRPCRequest &request) {
         return getbestblockhash(request, btc(), "btc");
     }
@@ -350,6 +452,9 @@ namespace {
     UniValue getblockhash(const JSONRPCRequest &request, Tree &tree,
                           const std::string &chain) {
         check_getblockhash(request, chain);
+
+        EnsurePopEnabled();
+
         LOCK(cs_main);
         auto &best = tree.getBestChain();
         if (best.blocksCount() == 0) {
@@ -377,11 +482,11 @@ namespace {
         return altintegration::ToJSON<UniValue>(*index);
     }
 
-    UniValue getvbkblockhash(const Config &config,
+    UniValue getvbkblockhash(const Config &,
                              const JSONRPCRequest &request) {
         return getblockhash(request, vbk(), "vbk");
     }
-    UniValue getbtcblockhash(const Config &config,
+    UniValue getbtcblockhash(const Config &,
                              const JSONRPCRequest &request) {
         return getblockhash(request, btc(), "btc");
     }
@@ -391,7 +496,7 @@ namespace {
 // getpoprawmempool
 namespace {
 
-    UniValue getrawpopmempool(const Config &config,
+    UniValue getrawpopmempool(const Config &,
                               const JSONRPCRequest &request) {
         auto cmdname = "getrawpopmempool";
         RPCHelpMan{
@@ -405,7 +510,7 @@ namespace {
         }
             .Check(request);
 
-        auto &mp = *VeriBlock::GetPop().mempool;
+        auto &mp = VeriBlock::GetPop().getMemPool();
         return altintegration::ToJSON<UniValue>(mp);
     }
 
@@ -440,7 +545,7 @@ namespace {
 
         auto &pop = VeriBlock::GetPop();
 
-        auto &mp = *pop.mempool;
+        auto &mp = pop.getMemPool();
         auto *pl = mp.get<T>(pid);
         if (pl) {
             out = *pl;
@@ -449,7 +554,7 @@ namespace {
 
         // search in the alttree storage
         const auto &containing =
-            pop.altTree->getPayloadsIndex().getContainingAltBlocks(
+            pop.getAltBlockTree().getPayloadsIndex().getContainingAltBlocks(
                 pid.asVector());
         if (containing.size() == 0) return false;
 
@@ -517,6 +622,8 @@ namespace {
         .Check(request);
         // clang-format on
 
+        EnsurePopEnabled();
+
         using id_t = typename T::id_t;
         id_t pid;
         try {
@@ -564,7 +671,7 @@ namespace {
         }
 
         if (!fVerbose) {
-            return altintegration::ToJSON<UniValue>(out.toHex());
+            return altintegration::ToJSON<UniValue>(altintegration::SerializeToHex(out));
         }
 
         uint256 activeHashBlock{};
@@ -606,21 +713,69 @@ namespace {
         return result;
     }
 
-    UniValue getrawatv(const Config &config, const JSONRPCRequest &req) {
+    UniValue getrawatv(const Config &, const JSONRPCRequest &req) {
         return getrawpayload<altintegration::ATV>(req, "atv");
     }
-    UniValue getrawvtb(const Config &config, const JSONRPCRequest &req) {
+    UniValue getrawvtb(const Config &, const JSONRPCRequest &req) {
         return getrawpayload<altintegration::VTB>(req, "vtb");
     }
-    UniValue getrawvbkblock(const Config &config, const JSONRPCRequest &req) {
+    UniValue getrawvbkblock(const Config &, const JSONRPCRequest &req) {
         return getrawpayload<altintegration::VbkBlock>(req, "vbkblock");
     }
 
 } // namespace
 
+UniValue getpopparams(const Config &, const JSONRPCRequest& req)
+{
+    std::string cmdname = "getpopparams";
+    // clang-format off
+    RPCHelpMan{
+        cmdname,
+        "\nReturns POP-related parameters set for this altchain.\n",
+        {},
+        RPCResult{"TODO"},
+        RPCExamples{
+            HelpExampleCli(cmdname, "") +
+            HelpExampleRpc(cmdname, "")},
+    }
+        .Check(req);
+    // clang-format on
+
+    auto& config = VeriBlock::GetPop().getConfig();
+    auto ret = altintegration::ToJSON<UniValue>(*config.alt);
+
+    auto* vbkfirst = vbk().getBestChain().first();
+    auto* btcfirst = btc().getBestChain().first();
+    assert(vbkfirst);
+    assert(btcfirst);
+
+    auto _vbk = UniValue(UniValue::VOBJ);
+    _vbk.pushKV("hash", vbkfirst->getHash().toHex());
+    _vbk.pushKV("height", vbkfirst->getHeight());
+    _vbk.pushKV("network", config.vbk.params->networkName());
+
+    auto _btc = UniValue(UniValue::VOBJ);
+    _btc.pushKV("hash", btcfirst->getHash().toHex());
+    _btc.pushKV("height", btcfirst->getHeight());
+    _btc.pushKV("network", config.btc.params->networkName());
+
+    ret.pushKV("vbkBootstrapBlock", _vbk);
+    ret.pushKV("btcBootstrapBlock", _btc);
+
+    ret.pushKV("popActivationHeight", Params().GetConsensus().VeriBlockPopSecurityHeight);
+    ret.pushKV("popRewardPercentage", (int64_t)Params().PopRewardPercentage());
+    ret.pushKV("popRewardCoefficient", Params().PopRewardCoefficient());
+
+    return ret;
+}
+
 const CRPCCommand commands[] = {
-    {"pop_mining", "submitpop", submitpop, {"atv", "vtbs"}},
-    {"pop_mining", "getpopdata", getpopdata, {"blockheight"}},
+    {"pop_mining", "getpopparams", getpopparams, {}},
+    {"pop_mining", "submitpopatv", submitpopatv, {"atv"}},
+    {"pop_mining", "submitpopvtb", submitpopvtb, {"vtb"}},
+    {"pop_mining", "submitpopvbk", submitpopvbk, {"vbkblock"}},
+    {"pop_mining", "getpopdatabyheight", getpopdatabyheight, {"blockheight"}},
+    {"pop_mining", "getpopdatabyhash", getpopdatabyhash, {"hash"}},
     {"pop_mining", "getvbkblock", getvbkblock, {"hash"}},
     {"pop_mining", "getbtcblock", getbtcblock, {"hash"}},
     {"pop_mining", "getvbkbestblockhash", getvbkbestblockhash, {}},

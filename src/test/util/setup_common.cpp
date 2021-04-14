@@ -35,7 +35,7 @@
 #include <functional>
 #include <memory>
 
-#include <vbk/bootstraps.hpp>
+#include <vbk/params.hpp>
 #include <vbk/pop_service.hpp>
 
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
@@ -61,7 +61,7 @@ BasicTestingSetup::BasicTestingSetup(const std::string &chainName)
     gArgs.ForceSetArg("-datadir", m_path_root.string());
     ClearDatadirCache();
     SelectParams(chainName);
-    VeriBlock::selectPopConfig("regtest", "regtest", true);
+    VeriBlock::selectPopConfig("regtest");
     gArgs.ForceSetArg("-printtoconsole", "0");
     InitLogging();
     LogInstance().StartLogging();
@@ -117,7 +117,7 @@ TestingSetup::TestingSetup(const std::string &chainName)
 
     pblocktree.reset(new CBlockTreeDB(1 << 20, true));
     // VeriBlock
-    VeriBlock::SetPop(*pblocktree);
+    VeriBlock::InitPopContext(*pblocktree);
     pcoinsdbview.reset(new CCoinsViewDB(1 << 23, true));
     pcoinsTip.reset(new CCoinsViewCache(pcoinsdbview.get()));
     if (!LoadGenesisBlock(chainparams)) {
@@ -150,6 +150,7 @@ TestingSetup::~TestingSetup() {
     }
     threadGroup.interrupt_all();
     threadGroup.join_all();
+    VeriBlock::StopPop();
     GetMainSignals().FlushBackgroundCallbacks();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
     g_rpc_node = nullptr;
@@ -174,7 +175,7 @@ TestChain100Setup::TestChain100Setup() {
         m_coinbase_txns.push_back(b.vtx[0]);
     }
 
-    auto &tree = *VeriBlock::GetPop().altTree;
+    auto &tree = VeriBlock::GetPop().getAltBlockTree();
     assert(tree.getBestChain().tip()->getHeight() ==
            ChainActive().Tip()->nHeight);
 }

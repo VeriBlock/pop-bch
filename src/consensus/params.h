@@ -109,7 +109,7 @@ struct Params {
     uint256 nMinimumChainWork;
     BlockHash defaultAssumeValid;
     // VeriBlock
-    int32_t VeriBlockPopSecurityHeight;
+    uint64_t VeriBlockPopSecurityHeight;
 };
 } // namespace Consensus
 

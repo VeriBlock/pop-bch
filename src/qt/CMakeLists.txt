@@ -117,6 +117,7 @@ add_library(bitcoin-qt-base
 # platform.
 set(QT_PLUGIN_COMPONENTS QMinimalIntegrationPlugin)
 set(QT_PLUGIN_PLATFORM_DEFINITIONS -DQT_QPA_PLATFORM_MINIMAL=1)
+ADD_DEFINITIONS(-DQT_NO_KEYWORDS)
 
 # Linux support
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")

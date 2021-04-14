@@ -4,9 +4,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "vbk/p2p_sync.hpp"
-#include <veriblock/entities/atv.hpp>
-#include <veriblock/entities/vbkblock.hpp>
-#include <veriblock/entities/vtb.hpp>
+#include "validation.h"
+#include <veriblock/pop.hpp>
 
 namespace VeriBlock {
 namespace p2p {
@@ -100,6 +99,13 @@ namespace p2p {
         AssertLockHeld(cs_main);
         LogPrint(BCLog::NET, "received offered pop data: %s, bytes size: %d\n",
                  pop_t::name(), vRecv.size());
+
+        // do not process 'offers' during initial block download
+        if (::ChainstateActive().IsInitialBlockDownload()) {
+            // TODO: may want to keep a list of offered payloads, then filter all existing (on-chain) payloadsm and 'GET' others
+            return true;
+        }
+
         std::vector<std::vector<uint8_t>> offered_data;
         vRecv >> offered_data;
 
@@ -152,6 +158,13 @@ namespace p2p {
         pop_t data;
         vRecv >> data;
 
+        altintegration::ValidationState state;
+        if (!VeriBlock::GetPop().check(data, state)) {
+            LogPrint(BCLog::NET, "peer %d sent statelessly invalid pop data: %s\n", node->GetId(), state.toString());
+            Misbehaving(node->GetId(), 20, strprintf("statelessly invalid pop data getdata, reason: %s", state.toString()));
+            return false;
+        }
+
         auto &pop_state_map =
             getPopDataNodeState(node->GetId()).getMap<pop_t>();
         PopP2PState &pop_state = pop_state_map[data.getId()];
@@ -179,8 +192,7 @@ namespace p2p {
             return false;
         }
 
-        altintegration::ValidationState state;
-        auto result = pop_mempool.submit(std::make_shared<pop_t>(data), state);
+        auto result = pop_mempool.submit(data, state);
         if (!result &&
             result.status == altintegration::MemPool::FAILED_STATELESS) {
             LogPrint(BCLog::NET, "peer %d sent invalid pop data: %s\n",
@@ -196,7 +208,7 @@ namespace p2p {
 
     int processPopData(CNode *pfrom, const std::string &strCommand,
                        CDataStream &vRecv, CConnman *connman) {
-        auto &pop_mempool = *VeriBlock::GetPop().mempool;
+        auto &pop_mempool = VeriBlock::GetPop().getMemPool();
 
         // process Pop Data
         if (strCommand == altintegration::ATV::name()) {

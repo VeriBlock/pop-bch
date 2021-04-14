@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SRC_VBK_MERKLE_HPP
-#define BITCOIN_SRC_VBK_MERKLE_HPP
+#ifndef BCH_SRC_VBK_MERKLE_HPP
+#define BCH_SRC_VBK_MERKLE_HPP
 
 #include <iostream>
 
@@ -20,8 +20,6 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 
 bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
                               BlockValidationState &state);
-
-CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block);
 
 } // namespace VeriBlock
 

@@ -35,8 +35,8 @@
 #include <config/bitcoin-config.h>
 #endif
 
+#include <vbk/params.hpp>
 #include <univalue.h>
-#include <vbk/bootstraps.hpp>
 
 class HTTPRPCRequestProcessor;
 class CWallet;
@@ -82,7 +82,7 @@ namespace {
         }
         void selectParams(const std::string &network) override {
             SelectParams(network);
-            VeriBlock::selectPopConfig(gArgs);
+            VeriBlock::selectPopConfig(network);
         }
         uint64_t getAssumedBlockchainSize() override {
             return Params().AssumedBlockchainSize();
