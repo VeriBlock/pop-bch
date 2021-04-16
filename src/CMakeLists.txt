@@ -403,6 +403,7 @@ target_compile_definitions(util PUBLIC BOOST_SP_USE_STD_ATOMIC BOOST_AC_USE_STD_
 add_library(common
   	vbk/pop_common.cpp
 	vbk/merkle.cpp
+	vbk/genesis_common.cpp
 	amount.cpp
 	base58.cpp
 	bloom.cpp
@@ -487,6 +488,7 @@ add_library(server
 	vbk/rpc_register.cpp
 	vbk/p2p_sync.cpp
 	vbk/params.cpp
+	vbk/genesis.cpp
 	addrdb.cpp
 	addrman.cpp
 	avalanche/peermanager.cpp

@@ -4,31 +4,28 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <boost/test/unit_test.hpp>
+#include <gmock/gmock.h>
 
 #include <consensus/validation.h>
 #include <script/interpreter.h>
 #include <string>
 #include <test/util/setup_common.h>
 #include <validation.h>
-#include <vbk/bootstraps.hpp>
 #include <vbk/entity/context_info_container.hpp>
 #include <vbk/merkle.hpp>
 #include <vbk/pop_service.hpp>
 #include <vbk/util.hpp>
+#include <bootstraps.h>
 
-namespace VeriBlock {
+using ::testing::Return;
 
-KeystoneArray getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev);
+BOOST_AUTO_TEST_SUITE(util_service_tests)
 
-bool isKeystone(const CBlockIndex &block);
+BOOST_AUTO_TEST_CASE(is_keystone)
+{
+    SelectParams("regtest");
+    selectPopConfig("regtest", "regtest", true);
 
-const CBlockIndex *getPreviousKeystone(const CBlockIndex &block);
-
-} // namespace VeriBlock
-
-BOOST_AUTO_TEST_SUITE(pop_util_tests)
-
-BOOST_FIXTURE_TEST_CASE(is_keystone, TestingSetup) {
     CBlockIndex index;
     index.nHeight = 100; // multiple of 5
     BOOST_CHECK(VeriBlock::isKeystone(index));
@@ -36,7 +33,11 @@ BOOST_FIXTURE_TEST_CASE(is_keystone, TestingSetup) {
     BOOST_CHECK(!VeriBlock::isKeystone(index));
 }
 
-BOOST_FIXTURE_TEST_CASE(get_previous_keystone, TestingSetup) {
+BOOST_AUTO_TEST_CASE(get_previous_keystone)
+{
+    SelectParams("regtest");
+    selectPopConfig("regtest", "regtest", true);
+
     std::vector<CBlockIndex> blocks;
     blocks.resize(10);
     blocks[0].pprev = nullptr;
@@ -58,29 +59,26 @@ BOOST_FIXTURE_TEST_CASE(get_previous_keystone, TestingSetup) {
     BOOST_CHECK(VeriBlock::getPreviousKeystone(blocks[0]) == nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(make_context_info) {
+BOOST_AUTO_TEST_CASE(make_context_info)
+{
     TestChain100Setup blockchain;
 
-    CScript scriptPubKey = CScript()
-                           << ToByteVector(blockchain.coinbaseKey.GetPubKey())
-                           << OP_CHECKSIG;
+    CScript scriptPubKey = CScript() << ToByteVector(blockchain.coinbaseKey.GetPubKey()) << OP_CHECKSIG;
     CBlock block = blockchain.CreateAndProcessBlock({}, scriptPubKey);
 
     LOCK(cs_main);
 
-    CBlockIndex *index = LookupBlockIndex(block.GetHash());
+    CBlockIndex* index = LookupBlockIndex(block.GetHash());
     BOOST_REQUIRE(index != nullptr);
 
     uint256 txRoot{};
     auto keystones = VeriBlock::getKeystoneHashesForTheNextBlock(index->pprev);
-    auto container =
-        VeriBlock::ContextInfoContainer(index->nHeight, keystones, txRoot);
+    auto container = VeriBlock::ContextInfoContainer(index->nHeight, keystones, txRoot);
 
     // TestChain100Setup has blockchain with 100 blocks, new block is 101
     BOOST_CHECK(container.height == 101);
     BOOST_CHECK(container.keystones == keystones);
-    BOOST_CHECK(container.getAuthenticated().size() ==
-                container.getUnauthenticated().size() + 32);
+    BOOST_CHECK(container.getAuthenticated().size() == container.getUnauthenticated().size() + 32);
     BOOST_CHECK(container.getUnauthenticated().size() == 4 + 2 * 32);
 }
 

@@ -2,8 +2,8 @@
 // https://www.veriblock.org
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef BITCOIN_SRC_VBK_TEST_UTIL_UTIL_HPP
-#define BITCOIN_SRC_VBK_TEST_UTIL_UTIL_HPP
+#ifndef BCH_SRC_VBK_TEST_UTIL_UTIL_HPP
+#define BCH_SRC_VBK_TEST_UTIL_UTIL_HPP
 
 namespace VeriBlockTest {
 
@@ -127,5 +127,6 @@ static const std::string defaultVtbEncoded =
     "d41c8059c843d202fd75631d9ded5c9b9494010100000000000000";
 
 } // namespace VeriBlockTest
+
 
 #endif

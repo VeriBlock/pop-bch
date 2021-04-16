@@ -185,7 +185,15 @@ TestChain100Setup::TestChain100Setup() {
 // scriptPubKey, and try to add it to the current chain.
 //
 CBlock TestChain100Setup::CreateAndProcessBlock(
-    const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey) {
+    const std::vector<CMutableTransaction> &txns, uint256 prevBlock,
+    const CScript &scriptPubKey, bool* isBlockValid) {
+    CBlockIndex* pPrev = nullptr;
+    {
+        LOCK(cs_main);
+        pPrev = LookupBlockIndex(BlockHash(prevBlock));
+        assert(pPrev && "CreateAndProcessBlock called with unknown prev block");
+    }
+
     const Config &config = GetConfig();
     std::unique_ptr<CBlockTemplate> pblocktemplate =
         BlockAssembler(config, *m_node.mempool).CreateNewBlock(scriptPubKey);
@@ -208,11 +216,11 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
     {
         LOCK(cs_main);
         unsigned int extraNonce = 0;
-        IncrementExtraNonce(&block, ::ChainActive().Tip(),
+        IncrementExtraNonce(&block, pPrev,
                             config.GetMaxBlockSize(), extraNonce);
     }
 
-    block.nTime = ::ChainActive().Tip()->nTime + (rand() % 100 + 1);
+    block.nTime = pPrev->nTime + (rand() % 100 + 1);
 
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
     while (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
@@ -223,8 +231,20 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
         std::make_shared<const CBlock>(block);
     ProcessNewBlock(config, shared_pblock, true, nullptr);
 
+    bool isValid = ProcessNewBlock(config, shared_pblock, true, nullptr);
+    if(isBlockValid != nullptr) {
+        *isBlockValid = isValid;
+    }
+
     CBlock result = block;
     return result;
+}
+
+// Create a new block with just given transactions, coinbase paying to
+// scriptPubKey, and try to add it to the current chain.
+CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, bool* isBlockValid)
+{
+    return CreateAndProcessBlock(txns, ChainActive().Tip()->GetBlockHash(), scriptPubKey, isBlockValid);
 }
 
 TestChain100Setup::~TestChain100Setup() {}
