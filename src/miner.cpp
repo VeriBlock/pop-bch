@@ -166,7 +166,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
 
     // VeriBlock: add PopData into the block
     if (chainParams.isPopEnabled(nHeight)) {
-        pblock->popData = VeriBlock::getPopData();
+        pblock->popData = VeriBlock::getPopData(*pindexPrev);
     }
     if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() ||
         !pblock->popData.vtbs.empty()) {

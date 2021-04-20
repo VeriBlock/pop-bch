@@ -6,163 +6,59 @@
 #include <consensus/merkle.h>
 #include <hash.h>
 
-#include <vbk/entity/context_info_container.hpp>
 #include <vbk/merkle.hpp>
 #include <vbk/pop_common.hpp>
+#include <vbk/pop_service.hpp>
 
 namespace VeriBlock {
 
-template <typename pop_t>
-void popDataToHash(const std::vector<pop_t> &data,
-                   std::vector<uint256> &leaves) {
-    for (const auto &el : data) {
-        auto id = el.getId();
-        uint256 leaf;
-        std::copy(id.begin(), id.end(), leaf.begin());
-        leaves.push_back(leaf);
-    }
-}
+uint256 TopLevelMerkleRoot(const CBlockIndex* prevIndex, const CBlock& block, bool* mutated)
+{
+    using altintegration::CalculateTopLevelMerkleRoot;
+    auto& altParams = VeriBlock::GetPop().getConfig().getAltParams();
 
-bool isKeystone(const CBlockIndex &block) {
-    auto keystoneInterval =
-        VeriBlock::GetPop().config->alt->getKeystoneInterval();
-    return (block.nHeight % keystoneInterval) == 0;
-}
+    // first, build regular merkle root from transactions
+    auto txRoot = BlockMerkleRoot(block, mutated);
 
-const CBlockIndex *getPreviousKeystone(const CBlockIndex &block) {
-    const CBlockIndex *pblockWalk = &block;
-
-    do {
-        pblockWalk = pblockWalk->pprev;
-    } while (pblockWalk != nullptr && !isKeystone(*pblockWalk));
-
-    return pblockWalk;
-}
-
-KeystoneArray getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev) {
-    const CBlockIndex *pwalk = pindexPrev;
-
-    KeystoneArray keystones;
-    auto it = keystones.begin();
-    auto end = keystones.end();
-    while (it != end) {
-        if (pwalk == nullptr) {
-            break;
-        }
-
-        if (isKeystone(*pwalk)) {
-            *it = pwalk->GetBlockHash();
-            ++it;
-        }
-
-        pwalk = getPreviousKeystone(*pwalk);
+    // if POP is not enabled for 'block' , use original txRoot as merkle root
+    const auto height = prevIndex == nullptr ? 0 : prevIndex->nHeight + 1;
+    if (!Params().isPopEnabled(height)) {
+        return txRoot;
     }
 
-    return keystones;
+    // POP is enabled.
+
+    // then, find BlockIndex in AltBlockTree.
+    // if returns nullptr, 'prevIndex' is behind bootstrap block.
+    auto* prev = VeriBlock::GetAltBlockIndex(prevIndex);
+    auto tlmr = CalculateTopLevelMerkleRoot(std::vector<uint8_t>{txRoot.begin(), txRoot.end()}, block.popData, prev, altParams);
+    return uint256(tlmr.asVector());
 }
 
-int GetPopMerkleRootCommitmentIndex(const CBlock &block) {
-    int commitpos = -1;
-    if (!block.vtx.empty()) {
-        for (size_t o = 0; o < block.vtx[0]->vout.size(); o++) {
-            auto &s = block.vtx[0]->vout[o].scriptPubKey;
-            if (s.size() >= 37 && s[0] == OP_RETURN && s[1] == 0x23 &&
-                s[2] == 0x3a && s[3] == 0xe6 && s[4] == 0xca) {
-                commitpos = o;
-            }
-        }
-    }
-
-    return commitpos;
-}
-
-uint256 BlockPopDataMerkleRoot(const CBlock &block) {
-    std::vector<uint256> leaves;
-
-    popDataToHash(block.popData.context, leaves);
-    popDataToHash(block.popData.vtbs, leaves);
-    popDataToHash(block.popData.atvs, leaves);
-
-    return ComputeMerkleRoot(std::move(leaves), nullptr);
-}
-
-uint256 makeTopLevelRoot(int height, const KeystoneArray &keystones,
-                         const uint256 &txRoot) {
-    ContextInfoContainer context(height, keystones, txRoot);
-    return context.getTopLevelMerkleRoot();
-}
-
-uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
-                           bool *mutated) {
-    if (prevIndex == nullptr ||
-        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
-        return BlockMerkleRoot(block);
-    }
-
-    uint256 txRoot = BlockMerkleRoot(block, mutated);
-    uint256 popRoot = BlockPopDataMerkleRoot(block);
-
-    if (prevIndex == nullptr) {
-        // special case: this is genesis block
-        KeystoneArray keystones;
-        return makeTopLevelRoot(
-            0, keystones,
-            Hash(txRoot.begin(), txRoot.end(), popRoot.begin(), popRoot.end()));
-    }
-
-    auto keystones = getKeystoneHashesForTheNextBlock(prevIndex);
-    return makeTopLevelRoot(
-        prevIndex->nHeight + 1, keystones,
-        Hash(txRoot.begin(), txRoot.end(), popRoot.begin(), popRoot.end()));
-}
-
-bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
-                              BlockValidationState &state) {
+bool VerifyTopLevelMerkleRoot(const CBlock& block, const CBlockIndex* pprevIndex, BlockValidationState& state)
+{
     bool mutated = false;
-    uint256 hashMerkleRoot2 =
-        VeriBlock::TopLevelMerkleRoot(prevIndex, block, &mutated);
+    uint256 hashMerkleRoot2 = VeriBlock::TopLevelMerkleRoot(pprevIndex, block, &mutated);
 
     if (block.hashMerkleRoot != hashMerkleRoot2) {
-        return state.Invalid(
-            BlockValidationResult::BLOCK_MUTATED, REJECT_INVALID,
-            strprintf("hashMerkleRoot mismatch. expected %s, got %s",
-                      hashMerkleRoot2.GetHex(), block.hashMerkleRoot.GetHex()));
+        return state.Invalid(BlockValidationResult ::BLOCK_MUTATED, REJECT_INVALID, "bad-txnmrklroot",
+            strprintf("hashMerkleRoot mismatch. expected %s, got %s", hashMerkleRoot2.GetHex(), block.hashMerkleRoot.GetHex()));
     }
 
     // Check for merkle tree malleability (CVE-2012-2459): repeating sequences
     // of transactions in a block without affecting the merkle root of a block,
     // while still invalidating it.
     if (mutated) {
-        return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
-                             REJECT_INVALID, "bad-txns-duplicate",
-                             "duplicate transaction");
-    }
-
-    if (prevIndex == nullptr ||
-        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
-        return true;
-    }
-
-    // Add PopMerkleRoot commitment validation
-    int commitpos = GetPopMerkleRootCommitmentIndex(block);
-    if (commitpos != -1) {
-        uint256 popMerkleRoot = BlockPopDataMerkleRoot(block);
-        if (!memcpy(popMerkleRoot.begin(),
-                    &block.vtx[0]->vout[commitpos].scriptPubKey[4], 32)) {
-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
-                                 REJECT_INVALID, "bad-pop-tx-root-commitment",
-                                 "pop merkle root mismatch");
-        }
-    } else {
-        // If block is not genesis
-        if (prevIndex != nullptr) {
-            return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
-                                 REJECT_INVALID, "bad-pop-tx-root-commitment",
-                                 "commitment is missing");
-        }
+        return state.Invalid(BlockValidationResult::BLOCK_MUTATED, REJECT_INVALID, "bad-txns-duplicate", "duplicate transaction");
     }
 
     return true;
+}
+
+bool isKeystone(const CBlockIndex& block)
+{
+    auto keystoneInterval = VeriBlock::GetPop().getConfig().getAltParams().getKeystoneInterval();
+    return (block.nHeight % keystoneInterval) == 0;
 }
 
 CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block) {
@@ -175,7 +71,7 @@ CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block) {
     out.scriptPubKey[3] = 0xe6;
     out.scriptPubKey[4] = 0xca;
 
-    uint256 popMerkleRoot = BlockPopDataMerkleRoot(block);
+    uint256 popMerkleRoot = BlockMerkleRoot(block);
     memcpy(&out.scriptPubKey[5], popMerkleRoot.begin(), 32);
 
     return out;

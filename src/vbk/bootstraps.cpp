@@ -5,6 +5,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <chainparams.h>
+#include <pow/pow.h>
 #include <util/strencodings.h>
 
 #include "bootstraps.hpp"
@@ -23,6 +24,31 @@ static std::vector<std::string> parseBlocks(const std::string &s) {
     std::vector<std::string> strs;
     boost::split(strs, s, boost::is_any_of(","));
     return strs;
+}
+
+bool AltChainParamsVBITCASH::checkBlockHeader(const std::vector<uint8_t>& bytes, const std::vector<uint8_t>& root, altintegration::ValidationState& state) const noexcept
+{
+    const CChainParams& params = Params();
+
+    try {
+        // this throws
+        auto header = VeriBlock::headerFromBytes(bytes);
+
+        /* top level merkle `root` calculated by library is same as in endorsed header */
+        auto actual = std::vector<uint8_t>(header.hashMerkleRoot.begin(), header.hashMerkleRoot.end());
+        if(actual != root) {
+            return state.Invalid("bad-merkle-root", strprintf("Expected %s, got %s", HexStr(root), HexStr(actual)));
+        }
+
+        /* and POW of endorsed header is valid */
+        if(!CheckProofOfWork(header.GetHash(), header.nBits, params.GetConsensus())) {
+            return state.Invalid("bad-pow", "Bad proof of work");
+        }
+
+        return true;
+    } catch (...) {
+        return state.Invalid("bad-header", "Can not parse block header");
+    }
 }
 
 void printConfig(const altintegration::Config &config) {

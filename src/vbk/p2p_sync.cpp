@@ -4,9 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "vbk/p2p_sync.hpp"
-#include <veriblock/entities/atv.hpp>
-#include <veriblock/entities/vbkblock.hpp>
-#include <veriblock/entities/vtb.hpp>
+#include <veriblock/pop.hpp>
 
 namespace VeriBlock {
 namespace p2p {
@@ -196,7 +194,7 @@ namespace p2p {
 
     int processPopData(CNode *pfrom, const std::string &strCommand,
                        CDataStream &vRecv, CConnman *connman) {
-        auto &pop_mempool = *VeriBlock::GetPop().mempool;
+        auto &pop_mempool = VeriBlock::GetPop().getMemPool();
 
         // process Pop Data
         if (strCommand == altintegration::ATV::name()) {

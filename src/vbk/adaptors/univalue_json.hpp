@@ -7,74 +7,96 @@
 #define INTEGRATION_REFERENCE_BTC_JSON_HPP
 
 #include <univalue.h>
-#include <veriblock/json.hpp>
+#include <veriblock/pop.hpp>
 
 /// contains partial specialization of ToJSON, which allows to write
 /// UniValue v = ToJSON<UniValue>(vbk entity);
 
 namespace altintegration {
 
-template <> inline UniValue ToJSON(const std::string &t) {
+template <>
+inline UniValue ToJSON(const std::string& t)
+{
     return UniValue(t);
 }
 
-template <> inline UniValue ToJSON(const double &t) {
+template <>
+inline UniValue ToJSON(const double& t)
+{
     return UniValue(t);
 }
 
-template <> inline UniValue ToJSON(const uint32_t &t) {
+template <>
+inline UniValue ToJSON(const uint32_t& t)
+{
     return UniValue((uint64_t)t);
 }
 
-template <> inline UniValue ToJSON(const int &t) {
+template <>
+inline UniValue ToJSON(const int& t)
+{
     return UniValue((int64_t)t);
 }
 
 namespace json {
 
-    template <> inline UniValue makeEmptyObject() {
-        return UniValue(UniValue::VOBJ);
-    }
+template <>
+inline UniValue makeEmptyObject()
+{
+    return UniValue(UniValue::VOBJ);
+}
 
-    template <> inline UniValue makeEmptyArray() {
-        return UniValue(UniValue::VARR);
-    }
+template <>
+inline UniValue makeEmptyArray()
+{
+    return UniValue(UniValue::VARR);
+}
 
-    template <>
-    inline void putKV(UniValue &object, const std::string &key,
-                      const UniValue &val) {
-        object.pushKV(key, val);
-    }
+template <>
+inline void putKV(UniValue& object,
+    const std::string& key,
+    const UniValue& val)
+{
+    object.pushKV(key, val);
+}
 
-    template <>
-    inline void putStringKV(UniValue &object, const std::string &key,
-                            const std::string &value) {
-        object.pushKV(key, value);
-    }
+template <>
+inline void putStringKV(UniValue& object,
+    const std::string& key,
+    const std::string& value)
+{
+    object.pushKV(key, value);
+}
 
-    template <>
-    inline void putIntKV(UniValue &object, const std::string &key,
-                         int64_t value) {
-        object.pushKV(key, value);
-    }
+template <>
+inline void putIntKV(UniValue& object,
+    const std::string& key,
+    int64_t value)
+{
+    object.pushKV(key, value);
+}
 
-    template <>
-    inline void putNullKV(UniValue &object, const std::string &key) {
-        object.pushKV(key, UniValue(UniValue::VNULL));
-    }
+template <>
+inline void putNullKV(UniValue& object, const std::string& key)
+{
+    object.pushKV(key, UniValue(UniValue::VNULL));
+}
 
-    template <>
-    inline void arrayPushBack(UniValue &array, const UniValue &val) {
-        array.push_back(val);
-    }
+template <>
+inline void arrayPushBack(UniValue& array, const UniValue& val)
+{
+    array.push_back(val);
+}
 
-    template <>
-    inline void putBoolKV(UniValue &object, const std::string &key,
-                          bool value) {
-        object.pushKV(key, value);
-    }
+template <>
+inline void putBoolKV(UniValue& object,
+    const std::string& key,
+    bool value)
+{
+    object.pushKV(key, value);
+}
 
 } // namespace json
 } // namespace altintegration
 
-#endif // INTEGRATION_REFERENCE_BTC_JSON_HPP
+#endif //INTEGRATION_REFERENCE_BTC_JSON_HPP

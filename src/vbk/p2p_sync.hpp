@@ -13,7 +13,7 @@
 #include <node/context.h>
 #include <rpc/blockchain.h>
 #include <vbk/pop_common.hpp>
-#include <veriblock/mempool.hpp>
+#include <veriblock/pop.hpp>
 
 namespace VeriBlock {
 
@@ -78,7 +78,7 @@ namespace p2p {
                       const CNetMsgMaker &msgMaker)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
         AssertLockHeld(cs_main);
-        auto &pop_mempool = *VeriBlock::GetPop().mempool;
+        auto &pop_mempool = VeriBlock::GetPop().getMemPool();
         const auto &data = pop_mempool.getMap<PopDataType>();
 
         auto &pop_state_map =

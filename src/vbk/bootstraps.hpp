@@ -11,7 +11,7 @@
 
 #include <primitives/block.h>
 #include <util/system.h> // for gArgs
-#include <veriblock/config.hpp>
+#include <veriblock/pop.hpp>
 
 namespace VeriBlock {
 
@@ -39,6 +39,14 @@ struct AltChainParamsVBITCASH : public altintegration::AltChainParams {
 
     std::vector<uint8_t>
     getHash(const std::vector<uint8_t> &bytes) const noexcept override;
+
+    // we should verify:
+    // - check that 'bytes' can be deserialized to a CBlockHeader
+    // - check that this CBlockHeader is valid (time, pow, version...)
+    // - check that 'root' is equal to Merkle Root in CBlockHeader
+    bool checkBlockHeader(
+        const std::vector<uint8_t>& bytes,
+        const std::vector<uint8_t>& root, altintegration::ValidationState& state) const noexcept override;
 
     altintegration::AltBlock bootstrap;
 };

@@ -10,29 +10,30 @@
 #include <dbwrapper.h>
 #include <shutdown.h>
 #include <txdb.h>
-
-#include <vbk/adaptors/block_batch_adaptor.hpp>
 #include <vbk/adaptors/payloads_provider.hpp>
-#include <vbk/p2p_sync.hpp>
-#include <vbk/pop_common.hpp>
-#include <vbk/pop_service.hpp>
-
-#include <veriblock/storage/util.hpp>
 
 #ifdef WIN32
 #include <boost/thread/interruption.hpp>
 #endif // WIN32
 
+#include "pop_service.hpp"
+#include <utility>
+#include <vbk/adaptors/block_provider.hpp>
+#include <vbk/p2p_sync.hpp>
+#include <vbk/pop_common.hpp>
+#include <vbk/util.hpp>
+#include <veriblock/pop.hpp>
+
+
 namespace VeriBlock {
 
-static std::shared_ptr<PayloadsProvider> payloads = nullptr;
 static std::vector<altintegration::PopData> disconnected_popdata;
 
 bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
     AssertLockHeld(cs_main);
     auto containing = VeriBlock::blockToAltBlock(indexNew);
     altintegration::ValidationState instate;
-    if (!GetPop().altTree->acceptBlockHeader(containing, instate)) {
+    if (!GetPop().getAltBlockTree().acceptBlockHeader(containing, instate)) {
         LogPrintf("ERROR: alt tree cannot accept block %s\n",
                   instate.toString());
         return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
@@ -45,34 +46,9 @@ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
 bool checkPopDataSize(const altintegration::PopData &popData,
                       altintegration::ValidationState &state) {
     uint32_t nPopDataSize = ::GetSerializeSize(popData, CLIENT_VERSION);
-    if (nPopDataSize >= GetPop().config->alt->getMaxPopDataSize()) {
+    if (nPopDataSize >= GetPop().getConfig().getAltParams().getMaxPopDataSize()) {
         return state.Invalid("popdata-overisize",
                              "popData raw size more than allowed");
-    }
-
-    return true;
-}
-
-bool popdataStatelessValidation(const altintegration::PopData &popData,
-                                altintegration::ValidationState &state) {
-    auto &config = *GetPop().config;
-
-    for (const auto &b : popData.context) {
-        if (!altintegration::checkBlock(b, state, *config.vbk.params)) {
-            return state.Invalid("pop-vbkblock-statelessly-invalid");
-        }
-    }
-
-    for (const auto &vtb : popData.vtbs) {
-        if (!altintegration::checkVTB(vtb, state, *config.btc.params)) {
-            return state.Invalid("pop-vtb-statelessly-invalid");
-        }
-    }
-
-    for (const auto &atv : popData.atvs) {
-        if (!altintegration::checkATV(atv, state, *config.alt)) {
-            return state.Invalid("pop-atv-statelessly-invalid");
-        }
     }
 
     return true;
@@ -81,7 +57,7 @@ bool popdataStatelessValidation(const altintegration::PopData &popData,
 bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
     AssertLockHeld(cs_main);
     auto bootstrapBlockHeight =
-        GetPop().config->alt->getBootstrapBlock().height;
+        GetPop().getConfig().getAltParams().getBootstrapBlock().height;
     auto hash = block.GetHash();
     auto *index = LookupBlockIndex(hash);
 
@@ -92,17 +68,12 @@ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
 
     altintegration::ValidationState instate;
 
-    if (!checkPopDataSize(block.popData, instate) ||
-        !popdataStatelessValidation(block.popData, instate)) {
-        return error(
-            "[%s] block %s is not accepted because popData is invalid: %s",
-            __func__, hash.ToString(), instate.toString());
+    if (!GetPop().check(block.popData, instate)) {
+        return error("[%s] block %s is not accepted because popData is invalid: %s", __func__, block.GetHash().ToString(),
+            instate.toString());
     }
 
-    auto &provider = GetPayloadsProvider();
-    provider.write(block.popData);
-
-    GetPop().altTree->acceptBlock(
+    GetPop().getAltBlockTree().acceptBlock(
         std::vector<uint8_t>{hash.begin(), hash.end()}, block.popData);
 
     return true;
@@ -110,25 +81,29 @@ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
 
 bool setState(const BlockHash &hash, altintegration::ValidationState &state) {
     AssertLockHeld(cs_main);
-    return GetPop().altTree->setState(
+    return GetPop().getAltBlockTree().setState(
         std::vector<uint8_t>{hash.begin(), hash.end()}, state);
-}
-
-altintegration::PopData getPopData() {
-    AssertLockHeld(cs_main);
-    return GetPop().mempool->getPop();
 }
 
 void removePayloadsFromMempool(const altintegration::PopData &popData) {
     AssertLockHeld(cs_main);
-    GetPop().mempool->removeAll(popData);
+    GetPop().getMemPool().removeAll(popData);
 }
 
 void updatePopMempoolForReorg() {
     AssertLockHeld(cs_main);
-    auto &pop = GetPop();
+    altintegration::ValidationState state;
+    auto& popmp = VeriBlock::GetPop().getMemPool();
     for (const auto &popData : disconnected_popdata) {
-        pop.mempool->submitAll(popData);
+        for (const auto& i : popData.context) {
+            popmp.submit(i, state);
+        }
+        for (const auto& i : popData.vtbs) {
+            popmp.submit(i, state);
+        }
+        for (const auto& i : popData.atvs) {
+            popmp.submit(i, state);
+        }
     }
     disconnected_popdata.clear();
 }
@@ -139,123 +114,46 @@ void addDisconnectedPopdata(const altintegration::PopData &popData) {
 }
 
 void SetPop(CDBWrapper &db) {
-    payloads = std::make_shared<PayloadsProvider>(db);
-    std::shared_ptr<altintegration::PayloadsProvider> dbrepo = payloads;
-    SetPop(dbrepo);
+    auto payloads_provider = std::make_shared<PayloadsProvider>(db);
+    SetPop(payloads_provider);
 
     auto &app = GetPop();
-    app.mempool->onAccepted<altintegration::ATV>(
+    app.getMemPool().onAccepted<altintegration::ATV>(
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::ATV>);
-    app.mempool->onAccepted<altintegration::VTB>(
+    app.getMemPool().onAccepted<altintegration::VTB>(
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VTB>);
-    app.mempool->onAccepted<altintegration::VbkBlock>(
+    app.getMemPool().onAccepted<altintegration::VbkBlock>(
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
 }
 
-PayloadsProvider &GetPayloadsProvider() {
-    return *payloads;
-}
-
-bool hasPopData(CBlockTreeDB &db) {
-    return db.Exists(BlockBatchAdaptor::btctip()) &&
-           db.Exists(BlockBatchAdaptor::vbktip()) &&
-           db.Exists(BlockBatchAdaptor::alttip());
-}
-
-void saveTrees(altintegration::BlockBatchAdaptor &batch) {
+altintegration::PopData getPopData(const CBlockIndex& pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
     AssertLockHeld(cs_main);
-    altintegration::SaveAllTrees(*GetPop().altTree, batch);
+
+    std::vector<uint8_t> prevHash{pindexPrev.GetBlockHash().begin(), pindexPrev.GetBlockHash().end()};
+    return GetPop().generatePopData(prevHash);
 }
 
-template <typename BlockTree>
-bool LoadTree(CDBIterator &iter, char blocktype,
-              std::pair<char, std::string> tiptype, BlockTree &out,
-              altintegration::ValidationState &state) {
-    using index_t = typename BlockTree::index_t;
-    using block_t = typename index_t::block_t;
-    using hash_t = typename BlockTree::hash_t;
-
-    // Load tip
-    hash_t tiphash;
-    std::pair<char, std::string> ckey;
-
-    iter.Seek(tiptype);
-    if (!iter.Valid()) {
-        // no valid tip is stored = no need to load anything
-        return error("%s: failed to load %s tip", block_t::name());
-    }
-    if (!iter.GetKey(ckey)) {
-        return error("%s: failed to find key %c:%s in %s", __func__,
-                     tiptype.first, tiptype.second, block_t::name());
-    }
-    if (ckey != tiptype) {
-        return error("%s: bad key for tip %c:%s in %s", __func__, tiptype.first,
-                     tiptype.second, block_t::name());
-    }
-    if (!iter.GetValue(tiphash)) {
-        return error("%s: failed to read tip value in %s", __func__,
-                     block_t::name());
-    }
-
-    std::vector<index_t> blocks;
-
-    // Load blocks
-    iter.Seek(std::make_pair(blocktype, hash_t()));
-    while (iter.Valid()) {
-#if defined BOOST_THREAD_PROVIDES_INTERRUPTIONS
-        boost::this_thread::interruption_point();
-#endif
-        if (ShutdownRequested()) return false;
-        std::pair<char, hash_t> key;
-        if (iter.GetKey(key) && key.first == blocktype) {
-            index_t diskindex;
-            if (iter.GetValue(diskindex)) {
-                blocks.push_back(diskindex);
-                iter.Next();
-            } else {
-                return error("%s: failed to read %s block", __func__,
-                             block_t::name());
-            }
-        } else {
-            break;
-        }
-    }
-
-    // sort blocks by height
-    std::sort(blocks.begin(), blocks.end(),
-              [](const index_t &a, const index_t &b) {
-                  return a.getHeight() < b.getHeight();
-              });
-    if (!altintegration::LoadTree(out, blocks, tiphash, state)) {
-        return error("%s: failed to load tree %s", __func__, block_t::name());
-    }
-
-    auto *tip = out.getBestChain().tip();
-    assert(tip);
-    LogPrintf("Loaded %d blocks in %s tree with tip %s\n",
-              out.getBlocks().size(), block_t::name(),
-              tip->toShortPrettyString());
-
-    return true;
+bool hasPopData(CBlockTreeDB& db)
+{
+    return db.Exists(tip_key<altintegration::BtcBlock>()) &&
+           db.Exists(tip_key<altintegration::VbkBlock>()) &&
+           db.Exists(tip_key<altintegration::AltBlock>());
 }
 
-bool loadTrees(CDBIterator &iter) {
-    auto &pop = GetPop();
+void saveTrees(CDBBatch* batch)
+{
+    AssertLockHeld(cs_main);
+    VeriBlock::BlockBatch b(*batch);
+    GetPop().saveAllTrees(b);
+}
+bool loadTrees(CDBWrapper& db)
+{
     altintegration::ValidationState state;
-    if (!LoadTree(iter, DB_BTC_BLOCK, BlockBatchAdaptor::btctip(),
-                  pop.altTree->btc(), state)) {
-        return error("%s: failed to load BTC tree %s", __func__,
-                     state.toString());
-    }
-    if (!LoadTree(iter, DB_VBK_BLOCK, BlockBatchAdaptor::vbktip(),
-                  pop.altTree->vbk(), state)) {
-        return error("%s: failed to load VBK tree %s", __func__,
-                     state.toString());
-    }
-    if (!LoadTree(iter, DB_ALT_BLOCK, BlockBatchAdaptor::alttip(), *pop.altTree,
-                  state)) {
-        return error("%s: failed to load ALT tree %s", __func__,
-                     state.toString());
+
+    BlockReader reader(db);
+    if (!GetPop().loadAllTrees(reader, state)) {
+        return error("%s: failed to load trees %s", __func__, state.toString());
     }
 
     return true;
@@ -269,14 +167,14 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
         return {};
     }
 
-    const auto &pop = GetPop();
-    auto &cfg = *pop.config;
+    auto &pop = GetPop();
+    auto &cfg = pop.getConfig();
 
-    if (pindexPrev.nHeight < (int)cfg.alt->getEndorsementSettlementInterval()) {
+    if (pindexPrev.nHeight < (int)cfg.getAltParams().getEndorsementSettlementInterval()) {
         return {};
     }
 
-    if (pindexPrev.nHeight < (int)cfg.alt->getPopPayoutDelay()) {
+    if (pindexPrev.nHeight < (int)cfg.getAltParams().getPayoutParams().getPopPayoutDelay()) {
         return {};
     }
 
@@ -284,11 +182,11 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
     auto hash = pindexPrev.GetBlockHash();
     std::vector<uint8_t> v_hash{hash.begin(), hash.end()};
 
-    bool ret = pop.altTree->setState(v_hash, state);
+    bool ret = pop.getAltBlockTree().setState(v_hash, state);
     (void)ret;
     assert(ret);
 
-    auto rewards = pop.altTree->getPopPayout(v_hash);
+    auto rewards = pop.getPopPayout(v_hash);
     int halving =
         (pindexPrev.nHeight + 1) / param.GetConsensus().nSubsidyHalvingInterval;
     PoPRewards btcRewards{};
@@ -466,23 +364,23 @@ int compareForks(const CBlockIndex &leftForkTip,
     auto right = blockToAltBlock(rightForkTip);
     auto state = altintegration::ValidationState();
 
-    if (!pop.altTree->setState(left.hash, state)) {
-        if (!pop.altTree->setState(right.hash, state)) {
+    if (!pop.getAltBlockTree().setState(left.hash, state)) {
+        if (!pop.getAltBlockTree().setState(right.hash, state)) {
             throw std::logic_error("both chains are invalid");
         }
         return -1;
     }
 
-    return pop.altTree->comparePopScore(left.hash, right.hash);
+    return pop.getAltBlockTree().comparePopScore(left.hash, right.hash);
 }
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
-    return altintegration::getLastKnownBlocks(GetPop().altTree->vbk(), blocks);
+    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().vbk(), blocks);
 }
 std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
-    return altintegration::getLastKnownBlocks(GetPop().altTree->btc(), blocks);
+    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(), blocks);
 }
 
 } // namespace VeriBlock

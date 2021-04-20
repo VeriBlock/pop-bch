@@ -29,7 +29,7 @@ option(USE_LD_GOLD "Try to use gold as a linker if available" ON)
 
 # VeriBlock
 find_package(veriblock-pop-cpp REQUIRED)
-link_libraries(veriblock::veriblock-pop-cpp)
+link_libraries(veriblock-pop-cpp)
 
 set(OS_WITH_JEMALLOC_AS_SYSTEM_DEFAULT
 	"Android"
@@ -406,7 +406,6 @@ add_library(common
 	amount.cpp
 	base58.cpp
 	bloom.cpp
-	vbk/bootstraps.cpp
 	cashaddr.cpp
 	cashaddrenc.cpp
 	chainparams.cpp
@@ -483,6 +482,7 @@ endif()
 
 # Bitcoin server facilities
 add_library(server
+	vbk/bootstraps.cpp
 	vbk/pop_service.cpp
 	vbk/rpc_register.cpp
 	vbk/p2p_sync.cpp
@@ -600,7 +600,7 @@ if(BUILD_BITCOIN_WALLET)
 		target_sources(bitcoin-wallet PRIVATE bitcoin-wallet-res.rc)
 	endif()
 
-	target_link_libraries(bitcoin-wallet wallet-tool common util)
+	target_link_libraries(bitcoin-wallet wallet-tool server)
 
 	add_to_symbols_check(bitcoin-wallet)
 	add_to_security_check(bitcoin-wallet)
@@ -649,7 +649,7 @@ if(BUILD_BITCOIN_TX)
 		target_sources(bitcoin-tx PRIVATE bitcoin-tx-res.rc)
 	endif()
 
-	target_link_libraries(bitcoin-tx bitcoinconsensus)
+	target_link_libraries(bitcoin-tx bitcoinconsensus server)
 
 	add_to_symbols_check(bitcoin-tx)
 	add_to_security_check(bitcoin-tx)

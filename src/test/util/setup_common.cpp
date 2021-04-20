@@ -174,7 +174,7 @@ TestChain100Setup::TestChain100Setup() {
         m_coinbase_txns.push_back(b.vtx[0]);
     }
 
-    auto &tree = *VeriBlock::GetPop().altTree;
+    auto &tree = VeriBlock::GetPop().getAltBlockTree();
     assert(tree.getBestChain().tip()->getHeight() ==
            ChainActive().Tip()->nHeight);
 }

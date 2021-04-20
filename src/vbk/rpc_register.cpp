@@ -5,7 +5,6 @@
 #include <serialize.h>
 #include <util/validation.h>
 #include <validation.h>
-#include <vbk/entity/context_info_container.hpp>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h> // for CWallet
 
@@ -16,7 +15,7 @@
 #include <vbk/merkle.hpp>
 #include <vbk/pop_service.hpp>
 #include <vbk/rpc_register.hpp>
-#include <veriblock/mempool_result.hpp>
+#include <vbk/util.hpp>
 
 namespace VeriBlock {
 
@@ -112,15 +111,15 @@ UniValue getpopdata(const Config &config, const JSONRPCRequest &request) {
     auto block = GetBlockChecked(pBlockIndex);
 
     // context info
-    uint256 txRoot = BlockMerkleRoot(block);
-    auto keystones =
-        VeriBlock::getKeystoneHashesForTheNextBlock(pBlockIndex->pprev);
-
-    auto contextInfo = VeriBlock::ContextInfoContainer(pBlockIndex->nHeight,
-                                                       keystones, txRoot);
-    auto authedContext = contextInfo.getAuthenticated();
-    result.pushKV("raw_contextinfocontainer",
-                  HexStr(authedContext.begin(), authedContext.end()));
+    auto txRoot = BlockMerkleRoot(block);
+    using altintegration::AuthenticatedContextInfoContainer;
+    auto authctx = AuthenticatedContextInfoContainer::createFromPrevious(
+        std::vector<uint8_t>{txRoot.begin(), txRoot.end()},
+        block.popData.getMerkleRoot(),
+        // we build authctx based on previous block
+        VeriBlock::GetAltBlockIndex(pBlockIndex->pprev),
+        VeriBlock::GetPop().getConfig().getAltParams());
+    result.pushKV("authenticated_context", altintegration::ToJSON<UniValue>(authctx));
 
     auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
 
@@ -154,7 +153,8 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
             ParseHexV(payloads_hex, strprintf("%s[%d]", pop_t::name(), idx));
 
         pop_t data;
-        if (!altintegration::Deserialize(payloads_bytes, data, state)) {
+        altintegration::ReadStream stream(payloads_bytes);
+        if (!altintegration::DeserializeFromVbkEncoding(stream, data, state)) {
             return state.Invalid("bad-payloads");
         }
         payloads.push_back(data);
@@ -202,13 +202,21 @@ UniValue submitpop(const Config &config, const JSONRPCRequest &request) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, state.GetPath());
     }
 
+    //TODO: separate submit RPC
     {
         LOCK(cs_main);
-        auto &pop_mempool = *VeriBlock::GetPop().mempool;
+        auto& popmp = VeriBlock::GetPop().getMemPool();
+        for (const auto& i : popData.context) {
+            popmp.submit(i, state);
+        }
+        for (const auto& i : popData.vtbs) {
+            popmp.submit(i, state);
+        }
+        for (const auto& i : popData.atvs) {
+            popmp.submit(i, state);
+        }
 
-        altintegration::MempoolResult result = pop_mempool.submitAll(popData);
-
-        return altintegration::ToJSON<UniValue>(result);
+        return altintegration::ToJSON<UniValue>(state);
     }
 }
 
@@ -216,11 +224,11 @@ using VbkTree = altintegration::VbkBlockTree;
 using BtcTree = altintegration::VbkBlockTree::BtcTree;
 
 static VbkTree &vbk() {
-    return VeriBlock::GetPop().altTree->vbk();
+    return VeriBlock::GetPop().getAltBlockTree().vbk();
 }
 
 static BtcTree &btc() {
-    return VeriBlock::GetPop().altTree->btc();
+    return VeriBlock::GetPop().getAltBlockTree().btc();
 }
 
 // getblock
@@ -405,7 +413,7 @@ namespace {
         }
             .Check(request);
 
-        auto &mp = *VeriBlock::GetPop().mempool;
+        auto &mp = VeriBlock::GetPop().getMemPool();
         return altintegration::ToJSON<UniValue>(mp);
     }
 
@@ -440,7 +448,7 @@ namespace {
 
         auto &pop = VeriBlock::GetPop();
 
-        auto &mp = *pop.mempool;
+        auto &mp = pop.getMemPool();
         auto *pl = mp.get<T>(pid);
         if (pl) {
             out = *pl;
@@ -449,7 +457,7 @@ namespace {
 
         // search in the alttree storage
         const auto &containing =
-            pop.altTree->getPayloadsIndex().getContainingAltBlocks(
+            pop.getAltBlockTree().getPayloadsIndex().getContainingAltBlocks(
                 pid.asVector());
         if (containing.size() == 0) return false;
 
@@ -564,7 +572,7 @@ namespace {
         }
 
         if (!fVerbose) {
-            return altintegration::ToJSON<UniValue>(out.toHex());
+            return altintegration::ToJSON<UniValue>(altintegration::SerializeToHex(out));
         }
 
         uint256 activeHashBlock{};

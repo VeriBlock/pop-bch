@@ -53,6 +53,7 @@
 #include <boost/thread.hpp> // boost::this_thread::interruption_point() (mingw)
 
 #include <vbk/merkle.hpp>
+#include <vbk/util.hpp>
 #include <vbk/pop_service.hpp>
 
 #include <string>
@@ -2104,8 +2105,8 @@ EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     assert(ret && "block has been checked previously and should be valid");
 
     auto& pop = VeriBlock::GetPop();
-    auto* vbktip = pop.altTree->vbk().getBestChain().tip();
-    auto* btctip = pop.altTree->btc().getBestChain().tip();
+    auto* vbktip = pop.getAltBlockTree().vbk().getBestChain().tip();
+    auto* btctip = pop.getAltBlockTree().btc().getBestChain().tip();
     LogPrintf(
         "%s: new best=ALT:%d:%s %s %s version=0x%08x log2_work=%.8g tx=%ld "
         "date='%s' progress=%f cache=%.1fMiB(%utxo)\n",
@@ -4419,7 +4420,7 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
     // VeriBlock: Block that have been passed to TestBlockValidity may not exist
     // in alt tree, because technically it was not created ("mined"). in this
     // case, add it and then remove
-    auto &tree = *VeriBlock::GetPop().altTree;
+    auto &tree = VeriBlock::GetPop().getAltBlockTree();
     std::vector<uint8_t> _hash{block_hash.begin(), block_hash.end()};
     bool shouldRemove = false;
     if (!tree.getBlockIndex(_hash)) {
@@ -4767,13 +4768,12 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
         AssertLockHeld(cs_main);
 
         // load blocks
-        std::unique_ptr<CDBIterator> pcursor(blocktree.NewIterator());
-        if (!VeriBlock::loadTrees(*pcursor)) {
+        if (!VeriBlock::loadTrees(blocktree)) {
             return false;
         }
 
         // ALT tree tip should be set - this is our last best tip
-        auto *tip = VeriBlock::GetPop().altTree->getBestChain().tip();
+        auto *tip = VeriBlock::GetPop().getAltBlockTree().getBestChain().tip();
         assert(tip && "we could not load tip of alt block");
         uint256 hash(tip->getHash());
 

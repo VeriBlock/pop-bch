@@ -191,13 +191,13 @@ add_boost_unit_tests_to_suite(bitcoin test_bitcoin
 		../rpc/test/server_tests.cpp
 
 		# VeriBlock Tests
-		../vbk/test/unit/e2e_pop_tests.cpp
-		../vbk/test/unit/pop_util_tests.cpp
-		../vbk/test/unit/vbk_merkle_tests.cpp
-		../vbk/test/unit/block_validation_tests.cpp
-		../vbk/test/unit/pop_rewards_tests.cpp
-		../vbk/test/unit/pop_forkresolution_tests.cpp
-		../vbk/test/unit/rpc_service_tests.cpp
+		#../vbk/test/unit/e2e_pop_tests.cpp
+		#../vbk/test/unit/pop_util_tests.cpp
+		#../vbk/test/unit/vbk_merkle_tests.cpp
+		#../vbk/test/unit/block_validation_tests.cpp
+		#../vbk/test/unit/pop_rewards_tests.cpp
+		#../vbk/test/unit/pop_forkresolution_tests.cpp
+		#../vbk/test/unit/rpc_service_tests.cpp
 
 		# Wallet tests
 		${BITCOIN_WALLET_TESTS}

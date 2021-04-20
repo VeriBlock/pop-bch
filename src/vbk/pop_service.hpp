@@ -9,10 +9,8 @@
 #include <consensus/validation.h>
 #include <validation.h>
 
-#include <vbk/adaptors/block_batch_adaptor.hpp>
+#include "pop_common.hpp"
 #include <vbk/adaptors/payloads_provider.hpp>
-#include <vbk/pop_common.hpp>
-#include <vbk/util.hpp>
 
 /** Amount in satoshis (Can be negative) */
 typedef int64_t CAmount;
@@ -32,12 +30,11 @@ using PoPRewards = std::map<CScript, CAmount>;
 
 void SetPop(CDBWrapper &db);
 
-PayloadsProvider &GetPayloadsProvider();
-
 //! returns true if all tips are stored in database, false otherwise
-bool hasPopData(CBlockTreeDB &db);
-void saveTrees(altintegration::BlockBatchAdaptor &batch);
-bool loadTrees(CDBIterator &iter);
+bool hasPopData(CBlockTreeDB& db);
+altintegration::PopData getPopData(const CBlockIndex& prev);
+void saveTrees(CDBBatch* batch);
+bool loadTrees(CDBWrapper& db);
 
 //! pop rewards
 PoPRewards getPopRewards(const CBlockIndex &pindexPrev)
@@ -69,7 +66,6 @@ bool setState(const BlockHash &hash, altintegration::ValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 //! mempool methods
-altintegration::PopData getPopData() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 void removePayloadsFromMempool(const altintegration::PopData &popData)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 void updatePopMempoolForReorg() EXCLUSIVE_LOCKS_REQUIRED(cs_main);

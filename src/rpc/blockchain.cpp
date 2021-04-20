@@ -1025,7 +1025,7 @@ static UniValue getblock(const Config &config, const JSONRPCRequest &request) {
     {
         auto &pop = VeriBlock::GetPop();
         LOCK(cs_main);
-        auto index = pop.altTree->getBlockIndex(std::vector<uint8_t>(hash.begin(), hash.end()));
+        auto index = pop.getAltBlockTree().getBlockIndex(std::vector<uint8_t>(hash.begin(), hash.end()));
         VBK_ASSERT(index);
         UniValue obj(UniValue::VOBJ);
 
