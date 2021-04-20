@@ -8,14 +8,13 @@
 
 #include <vbk/merkle.hpp>
 #include <vbk/pop_common.hpp>
-#include <vbk/pop_service.hpp>
 
 namespace VeriBlock {
 
-uint256 TopLevelMerkleRoot(const CBlockIndex* prevIndex, const CBlock& block, bool* mutated)
-{
+uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
+                           bool *mutated) {
     using altintegration::CalculateTopLevelMerkleRoot;
-    auto& altParams = VeriBlock::GetPop().getConfig().getAltParams();
+    auto &altParams = VeriBlock::GetPop().getConfig().getAltParams();
 
     // first, build regular merkle root from transactions
     auto txRoot = BlockMerkleRoot(block, mutated);
@@ -30,34 +29,43 @@ uint256 TopLevelMerkleRoot(const CBlockIndex* prevIndex, const CBlock& block, bo
 
     // then, find BlockIndex in AltBlockTree.
     // if returns nullptr, 'prevIndex' is behind bootstrap block.
-    auto* prev = VeriBlock::GetAltBlockIndex(prevIndex);
-    auto tlmr = CalculateTopLevelMerkleRoot(std::vector<uint8_t>{txRoot.begin(), txRoot.end()}, block.popData, prev, altParams);
+    auto *prev = VeriBlock::GetAltBlockIndex(prevIndex);
+    auto tlmr = CalculateTopLevelMerkleRoot(
+        std::vector<uint8_t>{txRoot.begin(), txRoot.end()}, block.popData, prev,
+        altParams);
     return uint256(tlmr.asVector());
 }
 
-bool VerifyTopLevelMerkleRoot(const CBlock& block, const CBlockIndex* pprevIndex, BlockValidationState& state)
-{
+bool VerifyTopLevelMerkleRoot(const CBlock &block,
+                              const CBlockIndex *pprevIndex,
+                              BlockValidationState &state) {
     bool mutated = false;
-    uint256 hashMerkleRoot2 = VeriBlock::TopLevelMerkleRoot(pprevIndex, block, &mutated);
+    uint256 hashMerkleRoot2 =
+        VeriBlock::TopLevelMerkleRoot(pprevIndex, block, &mutated);
 
     if (block.hashMerkleRoot != hashMerkleRoot2) {
-        return state.Invalid(BlockValidationResult ::BLOCK_MUTATED, REJECT_INVALID, "bad-txnmrklroot",
-            strprintf("hashMerkleRoot mismatch. expected %s, got %s", hashMerkleRoot2.GetHex(), block.hashMerkleRoot.GetHex()));
+        return state.Invalid(
+            BlockValidationResult ::BLOCK_MUTATED, REJECT_INVALID,
+            "bad-txnmrklroot",
+            strprintf("hashMerkleRoot mismatch. expected %s, got %s",
+                      hashMerkleRoot2.GetHex(), block.hashMerkleRoot.GetHex()));
     }
 
     // Check for merkle tree malleability (CVE-2012-2459): repeating sequences
     // of transactions in a block without affecting the merkle root of a block,
     // while still invalidating it.
     if (mutated) {
-        return state.Invalid(BlockValidationResult::BLOCK_MUTATED, REJECT_INVALID, "bad-txns-duplicate", "duplicate transaction");
+        return state.Invalid(BlockValidationResult::BLOCK_MUTATED,
+                             REJECT_INVALID, "bad-txns-duplicate",
+                             "duplicate transaction");
     }
 
     return true;
 }
 
-bool isKeystone(const CBlockIndex& block)
-{
-    auto keystoneInterval = VeriBlock::GetPop().getConfig().getAltParams().getKeystoneInterval();
+bool isKeystone(const CBlockIndex &block) {
+    auto keystoneInterval =
+        VeriBlock::GetPop().getConfig().getAltParams().getKeystoneInterval();
     return (block.nHeight % keystoneInterval) == 0;
 }
 

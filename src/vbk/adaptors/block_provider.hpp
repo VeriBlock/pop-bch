@@ -116,39 +116,39 @@ private:
 struct BlockReader : public altintegration::BlockReader {
     ~BlockReader() override = default;
 
-    BlockReader(CDBWrapper& db) : db(&db) {}
+    BlockReader(CDBWrapper& db) : _db(&db) {}
 
     bool getAltTip(AltBlock::hash_t& out) const override
     {
-        return db->Read(tip_key<AltBlock>(), out);
+        return _db->Read(tip_key<AltBlock>(), out);
     }
     bool getVbkTip(VbkBlock::hash_t& out) const override
     {
-        return db->Read(tip_key<VbkBlock>(), out);
+        return _db->Read(tip_key<VbkBlock>(), out);
     }
     bool getBtcTip(BtcBlock::hash_t& out) const override
     {
-        return db->Read(tip_key<BtcBlock>(), out);
+        return _db->Read(tip_key<BtcBlock>(), out);
     }
 
     std::shared_ptr<altintegration::BlockIterator<AltBlock>> getAltBlockIterator() const override
     {
-        std::shared_ptr<CDBIterator> it(db->NewIterator());
+        std::shared_ptr<CDBIterator> it(_db->NewIterator());
         return std::make_shared<BlockIterator<AltBlock>>(it);
     }
     std::shared_ptr<altintegration::BlockIterator<VbkBlock>> getVbkBlockIterator() const override
     {
-        std::shared_ptr<CDBIterator> it(db->NewIterator());
+        std::shared_ptr<CDBIterator> it(_db->NewIterator());
         return std::make_shared<BlockIterator<VbkBlock>>(it);
     }
     std::shared_ptr<altintegration::BlockIterator<BtcBlock>> getBtcBlockIterator() const override
     {
-        std::shared_ptr<CDBIterator> it(db->NewIterator());
+        std::shared_ptr<CDBIterator> it(_db->NewIterator());
         return std::make_shared<BlockIterator<BtcBlock>>(it);
     }
 
 private:
-    CDBWrapper* db{nullptr};
+    CDBWrapper* _db{nullptr};
 };
 
 
