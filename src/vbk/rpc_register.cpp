@@ -79,93 +79,120 @@ namespace {
 
 } // namespace
 
-UniValue getpopdata(const Config &config, const JSONRPCRequest &request) {
-    if (request.fHelp || request.params.size() != 1)
-        throw std::runtime_error(
-            "getpopdata block_height\n"
-            "\nFetches the data relevant to PoP-mining the given block.\n"
-            "\nArguments:\n"
-            "1. block_height         (numeric, required) The height index\n"
-            "\nResult:\n"
-            "{\n"
-            "    \"block_header\" : \"block_header_hex\",  (string) "
-            "Hex-encoded block header\n"
-            "    \"raw_contextinfocontainer\" : \"contextinfocontainer\",  "
-            "(string) Hex-encoded raw authenticated ContextInfoContainer "
-            "structure\n"
-            "    \"last_known_veriblock_blocks\" : [ (array) last known "
-            "VeriBlock blocks at the given Bitcoin block\n"
-            "        \"blockhash\",                (string) VeriBlock block "
-            "hash\n"
-            "       ... ]\n"
-            "    \"last_known_bitcoin_blocks\" : [ (array) last known Bitcoin "
-            "blocks at the given Bitcoin block\n"
-            "        \"blockhash\",                (string) Bitcoin block "
-            "hash\n"
-            "       ... ]\n"
-            "}\n"
-            "\nExamples:\n" +
-            HelpExampleCli("getpopdata", "1000") +
-            HelpExampleRpc("getpopdata", "1000"));
+namespace {
 
-    int height = request.params[0].get_int();
+    UniValue getpopdata(const Config &config, const CBlockIndex *index) {
+        if (!index) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+        }
 
-    LOCK(cs_main);
+        UniValue result(UniValue::VOBJ);
 
-    BlockHash blockhash = GetBlockHashByHeight(height);
+        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
+        ssBlock << index->GetBlockHeader();
+        result.pushKV("block_header", HexStr(ssBlock));
 
-    UniValue result(UniValue::VOBJ);
+        auto block = GetBlockChecked(index);
 
-    // get the block and its header
-    const CBlockIndex *pBlockIndex = LookupBlockIndex(blockhash);
+        auto txRoot = BlockMerkleRoot(block).asVector();
+        using altintegration::AuthenticatedContextInfoContainer;
+        auto authctx = AuthenticatedContextInfoContainer::createFromPrevious(
+            txRoot, block.popData.getMerkleRoot(),
+            // we build authctx based on previous block
+            VeriBlock::GetAltBlockIndex(index->pprev),
+            VeriBlock::GetPop().getConfig().getAltParams());
+        result.pushKV("authenticated_context",
+                      altintegration::ToJSON<UniValue>(authctx));
 
-    if (!pBlockIndex) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+        auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
+        UniValue univalueLastVBKBlocks(UniValue::VARR);
+        for (const auto &b : lastVBKBlocks) {
+            univalueLastVBKBlocks.push_back(HexStr(b));
+        }
+        result.pushKV("last_known_veriblock_blocks", univalueLastVBKBlocks);
+
+        auto lastBTCBlocks = VeriBlock::getLastKnownBTCBlocks(16);
+        UniValue univalueLastBTCBlocks(UniValue::VARR);
+        for (const auto &b : lastBTCBlocks) {
+            univalueLastBTCBlocks.push_back(HexStr(b));
+        }
+        result.pushKV("last_known_bitcoin_blocks", univalueLastBTCBlocks);
+
+        return result;
     }
 
-    CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
-    ssBlock << pBlockIndex->GetBlockHeader();
-    result.pushKV("block_header", HexStr(ssBlock));
+    UniValue getpopdatabyheight(const Config &config,
+                                const JSONRPCRequest &request) {
+        if (request.fHelp || request.params.size() != 1)
+            throw std::runtime_error(
+                "getpopdatabyheight block_height\n"
+                "\nFetches the data relevant to PoP-mining the given block.\n"
+                "\nArguments:\n"
+                "1. block_height         (numeric, required) Endorsed block "
+                "height from active chain\n"
+                "\nResult:\n"
+                "TODO: write docs\n"
+                "}\n"
+                "\nExamples:\n" +
+                HelpExampleCli("getpopdatabyheight", "1000") +
+                HelpExampleRpc("getpopdatabyheight", "1000"));
 
-    auto block = GetBlockChecked(pBlockIndex);
+        EnsurePopEnabled();
 
-    // context info
-    auto txRoot = BlockMerkleRoot(block);
-    using altintegration::AuthenticatedContextInfoContainer;
-    auto authctx = AuthenticatedContextInfoContainer::createFromPrevious(
-        std::vector<uint8_t>{txRoot.begin(), txRoot.end()},
-        block.popData.getMerkleRoot(),
-        // we build authctx based on previous block
-        VeriBlock::GetAltBlockIndex(pBlockIndex->pprev),
-        VeriBlock::GetPop().getConfig().getAltParams());
-    result.pushKV("authenticated_context",
-                  altintegration::ToJSON<UniValue>(authctx));
+        auto wallet = GetWalletForJSONRPCRequest(request);
+        if (!EnsureWalletIsAvailable(wallet.get(), request.fHelp)) {
+            return NullUniValue;
+        }
 
-    auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
+        // Make sure the results are valid at least up to the most recent block
+        // the user could have gotten from another RPC command prior to now
+        wallet->BlockUntilSyncedToCurrentChain();
 
-    UniValue univalueLastVBKBlocks(UniValue::VARR);
-    for (const auto &b : lastVBKBlocks) {
-        univalueLastVBKBlocks.push_back(HexStr(b));
+        int height = request.params[0].get_int();
+
+        LOCK(cs_main);
+        return getpopdata(config, ChainActive()[height]);
     }
-    result.pushKV("last_known_veriblock_blocks", univalueLastVBKBlocks);
 
-    auto lastBTCBlocks = VeriBlock::getLastKnownBTCBlocks(16);
-    UniValue univalueLastBTCBlocks(UniValue::VARR);
-    for (const auto &b : lastBTCBlocks) {
-        univalueLastBTCBlocks.push_back(HexStr(b));
+    UniValue getpopdatabyhash(const Config &config,
+                              const JSONRPCRequest &request) {
+        if (request.fHelp || request.params.size() != 1)
+            throw std::runtime_error(
+                "getpopdatabyhash block_height\n"
+                "\nFetches the data relevant to PoP-mining the given block.\n"
+                "\nArguments:\n"
+                "1. hash         (string, required) Endorsed block hash.\n"
+                "\nResult:\n"
+                "TODO: write docs\n"
+                "}\n"
+                "\nExamples:\n" +
+                HelpExampleCli("getpopdatabyhash", "xxx") +
+                HelpExampleRpc("getpopdatabyhash", "xxx"));
+
+        EnsurePopEnabled();
+
+        auto wallet = GetWalletForJSONRPCRequest(request);
+        if (!EnsureWalletIsAvailable(wallet.get(), request.fHelp)) {
+            return NullUniValue;
+        }
+
+        // Make sure the results are valid at least up to the most recent block
+        // the user could have gotten from another RPC command prior to now
+        wallet->BlockUntilSyncedToCurrentChain();
+
+        std::string hex = request.params[0].get_str();
+        LOCK(cs_main);
+
+        const auto hash = uint256S(hex);
+        return getpopdata(config, LookupBlockIndex(BlockHash(hash)));
     }
-    result.pushKV("last_known_bitcoin_blocks", univalueLastBTCBlocks);
 
-    return result;
-}
+} // namespace
 
 template <typename pop_t>
 bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
                    altintegration::ValidationState &state) {
     std::vector<pop_t> payloads;
-    LogPrint(BCLog::POP,
-             "VeriBlock-PoP: submitpop RPC called with %s, amount %d \n",
-             pop_t::name(), array.size());
     for (uint32_t idx = 0u, size = array.size(); idx < size; ++idx) {
         auto &payloads_hex = array[idx];
 
@@ -183,37 +210,38 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
     out = payloads;
     return true;
 }
-
 template <typename T>
-static void logSubmitResult(const std::string idhex, const altintegration::MemPool::SubmitResult& result, const altintegration::ValidationState& state)
-{
+static void logSubmitResult(const std::string idhex,
+                            const altintegration::MemPool::SubmitResult &result,
+                            const altintegration::ValidationState &state) {
     if (!result.isAccepted()) {
-        LogPrintf("rejected to add %s=%s to POP mempool: %s\n", T::name(), idhex, state.toString());
+        LogPrintf("rejected to add %s=%s to POP mempool: %s\n", T::name(),
+                  idhex, state.toString());
     } else {
         auto s = strprintf("(state: %s)", state.toString());
-        LogPrintf("accepted %s=%s to POP mempool %s\n", T::name(), idhex, (state.IsValid() ? "" : s));
+        LogPrintf("accepted %s=%s to POP mempool %s\n", T::name(), idhex,
+                  (state.IsValid() ? "" : s));
     }
 }
 
-void check_submitpop(const JSONRPCRequest& request, const std::string& popdata)
-{
+void check_submitpop(const JSONRPCRequest &request,
+                     const std::string &popdata) {
     auto cmdname = strprintf("submitpop%s", popdata);
     RPCHelpMan{
         cmdname,
         "Submit " + popdata,
         {
-            {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Serialized " + popdata},
+            {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::NO,
+             "Serialized " + popdata},
         },
         {},
-        RPCExamples{
-            HelpExampleCli(cmdname, "\"<hex>\"") +
-            HelpExampleRpc(cmdname, "\"<hex>\"")},
+        RPCExamples{HelpExampleCli(cmdname, "\"<hex>\"") +
+                    HelpExampleRpc(cmdname, "\"<hex>\"")},
     }
         .Check(request);
 }
 
-template <typename Pop>
-UniValue submitpopIt(const JSONRPCRequest &request) {
+template <typename Pop> UniValue submitpopIt(const JSONRPCRequest &request) {
     check_submitpop(request, Pop::name());
 
     EnsurePopEnabled();
@@ -655,11 +683,56 @@ namespace {
 
 } // namespace
 
+UniValue getpopparams(const Config &config, const JSONRPCRequest &req) {
+    std::string cmdname = "getpopparams";
+    // clang-format off
+    RPCHelpMan{
+        cmdname,
+        "\nReturns POP-related parameters set for this altchain.\n",
+        {},
+        RPCResult{"TODO"},
+        RPCExamples{
+            HelpExampleCli(cmdname, "") +
+            HelpExampleRpc(cmdname, "")},
+    }
+        .Check(req);
+    // clang-format on
+
+    auto &pop_config = VeriBlock::GetPop().getConfig();
+    auto ret = altintegration::ToJSON<UniValue>(*pop_config.alt);
+
+    auto *vbkfirst = vbk().getBestChain().first();
+    auto *btcfirst = btc().getBestChain().first();
+    assert(vbkfirst);
+    assert(btcfirst);
+
+    auto _vbk = UniValue(UniValue::VOBJ);
+    _vbk.pushKV("hash", vbkfirst->getHash().toHex());
+    _vbk.pushKV("height", vbkfirst->getHeight());
+    _vbk.pushKV("network", pop_config.vbk.params->networkName());
+
+    auto _btc = UniValue(UniValue::VOBJ);
+    _btc.pushKV("hash", btcfirst->getHash().toHex());
+    _btc.pushKV("height", btcfirst->getHeight());
+    _btc.pushKV("network", pop_config.btc.params->networkName());
+
+    ret.pushKV("vbkBootstrapBlock", _vbk);
+    ret.pushKV("btcBootstrapBlock", _btc);
+
+    ret.pushKV("popActivationHeight",
+               Params().GetConsensus().VeriBlockPopSecurityHeight);
+    ret.pushKV("popRewardPercentage", (int64_t)Params().PopRewardPercentage());
+    ret.pushKV("popRewardCoefficient", Params().PopRewardCoefficient());
+
+    return ret;
+}
+
 const CRPCCommand commands[] = {
+    {"pop_mining", "getpopparams", getpopparams, {}},
     {"pop_mining", "submitpopatv", submitpopatv, {"atv"}},
     {"pop_mining", "submitpopvtb", submitpopvtb, {"vtb"}},
     {"pop_mining", "submitpopvbk", submitpopvbk, {"vbkblock"}},
-    {"pop_mining", "getpopdata", getpopdata, {"blockheight"}},
+    {"pop_mining", "getpopdatabyheight", getpopdatabyheight, {"blockheight"}},
     {"pop_mining", "getvbkblock", getvbkblock, {"hash"}},
     {"pop_mining", "getbtcblock", getbtcblock, {"hash"}},
     {"pop_mining", "getvbkbestblockhash", getvbkbestblockhash, {}},
