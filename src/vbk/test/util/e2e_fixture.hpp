@@ -11,6 +11,7 @@
 #include <chainparams.h>
 #include <config.h>
 #include <consensus/validation.h>
+#include <consensus/merkle.h>
 #include <test/util/setup_common.h>
 #include <txmempool.h>
 #include <validation.h>
@@ -191,8 +192,11 @@ struct E2eFixture : public TestChain100Setup {
                                    std::to_string(height));
         }
 
-        return popminer.endorseVbkBlock(endorsed->getHeader(),
+        {
+            LOCK(cs_main);
+            return popminer.endorseVbkBlock(endorsed->getHeader(),
                                         getLastKnownBTCblock());
+        }
     }
 
     PublicationData createPublicationData(CBlockIndex* endorsed, const std::vector<uint8_t>& payoutInfo)
@@ -214,7 +218,7 @@ struct E2eFixture : public TestChain100Setup {
         return altintegration::GeneratePublicationData(
             header,
             *libendorsed,
-            std::vector<uint8_t>(txRoot.begin(), txRoot.end()),
+            txRoot,
             block.popData,
             payoutInfo,
             VeriBlock::GetPop().getConfig().getAltParams());

@@ -22,12 +22,14 @@ BOOST_AUTO_TEST_SUITE(e2e_pop_tests)
 BOOST_FIXTURE_TEST_CASE(ValidBlockIsAccepted, E2eFixture) {
     // altintegration and popminer configured to use BTC/VBK/ALT regtest.
     auto tip = ChainActive().Tip();
+    CBlock block;
     BOOST_CHECK(tip != nullptr);
 
-    // endorse tip
-    CBlock block = endorseAltBlockAndMine(tip->GetBlockHash(), 10);
+    block = endorseAltBlockAndMine(tip->GetBlockHash(), 10);
     BOOST_CHECK(block.popData.atvs.size() != 0);
     BOOST_CHECK(block.popData.vtbs.size() == 10);
+
+    // endorse tip
     {
         LOCK(cs_main);
         BOOST_REQUIRE(ChainActive().Tip()->GetBlockHash() == block.GetHash());
@@ -40,6 +42,7 @@ BOOST_FIXTURE_TEST_CASE(ValidBlockIsAccepted, E2eFixture) {
     // endorse another tip
     block = endorseAltBlockAndMine(tip->GetBlockHash(), 1);
     BOOST_CHECK(block.popData.atvs.size() != 0);
+
     auto lastHash = ChainActive().Tip()->GetBlockHash();
     {
         LOCK(cs_main);

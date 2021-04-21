@@ -35,7 +35,7 @@ function(make_link file)
 endfunction()
 
 make_link(functional/test_runner.py)
-make_link(util/bitcoin-util-test.py)
+#make_link(util/bitcoin-util-test.py)
 make_link(util/rpcauth-test.py)
 make_link(fuzz/test_runner.py)
 
@@ -100,20 +100,20 @@ add_functional_test_check(check-functional-upgrade-activated-extended
 )
 add_dependencies(check-upgrade-activated-extended check-functional-upgrade-activated-extended)
 
-if(BUILD_BITCOIN_TX)
-	add_test_custom_target(check-bitcoin-util
-		TEST_COMMAND
-			"${Python_EXECUTABLE}"
-			./util/bitcoin-util-test.py
-		CUSTOM_TARGET_ARGS
-			COMMENT "Test Bitcoin utilities..."
-			DEPENDS
-				bitcoin-tx
-				${CMAKE_CURRENT_BINARY_DIR}/util/bitcoin-util-test.py
-	)
-
-	add_dependencies(check check-bitcoin-util)
-endif()
+#if(BUILD_BITCOIN_TX)
+#	add_test_custom_target(check-bitcoin-util
+#		TEST_COMMAND
+#			"${Python_EXECUTABLE}"
+#			./util/bitcoin-util-test.py
+#		CUSTOM_TARGET_ARGS
+#			COMMENT "Test Bitcoin utilities..."
+#			DEPENDS
+#				bitcoin-tx
+#				${CMAKE_CURRENT_BINARY_DIR}/util/bitcoin-util-test.py
+#	)
+#
+#	add_dependencies(check check-bitcoin-util)
+#endif()
 
 add_custom_target(check-rpcauth
 	COMMENT "Test Bitcoin RPC authentication..."
