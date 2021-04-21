@@ -222,12 +222,6 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
             << std::vector<uint8_t>(MIN_TX_SIZE - coinbaseSize - 1);
     }
 
-    // VeriBlock: add payloads commitment
-    if (chainParams.isPopEnabled(nHeight)) {
-        CTxOut popOut =
-            VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
-        coinbaseTx.vout.push_back(popOut);
-    }
 
     pblocktemplate->entries[0].tx = MakeTransactionRef(coinbaseTx);
     pblocktemplate->entries[0].fees = -1 * nFees;

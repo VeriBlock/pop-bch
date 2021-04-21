@@ -19,9 +19,7 @@
 #include <vbk/pop_service.hpp>
 #include <vbk/util.hpp>
 
-#include <veriblock/alt-util.hpp>
-#include <veriblock/mempool.hpp>
-#include <veriblock/mock_miner.hpp>
+#include <veriblock/pop.hpp>
 
 using altintegration::ATV;
 using altintegration::BtcBlock;
@@ -43,7 +41,6 @@ struct E2eFixture : public TestChain100Setup {
     CScript cbKey = CScript()
                     << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
     MockMiner popminer;
-    altintegration::ValidationState state_;
     altintegration::PopContext *pop;
     std::vector<uint8_t> defaultPayoutInfo = {1, 2, 3, 4, 5};
 
@@ -91,7 +88,7 @@ struct E2eFixture : public TestChain100Setup {
         return blocks[0];
     }
 
-    ATV endorseAltBlock(BlockHash hash, const std::vector<VTB> &vtbs,
+    ATV endorseAltBlock(BlockHash hash,
                         const std::vector<uint8_t> &payoutInfo) {
         CBlockIndex *endorsed = nullptr;
         {
@@ -102,13 +99,13 @@ struct E2eFixture : public TestChain100Setup {
 
         auto publicationdata = createPublicationData(endorsed, payoutInfo);
         auto vbktx = popminer.createVbkTxEndorsingAltBlock(publicationdata);
-        auto atv = popminer.applyATV(vbktx, state_);
-        BOOST_CHECK(state_.IsValid());
+        auto *vbkblock = popminer.mineVbkBlocks(1, {vbktx});
+        auto atv = popminer.createATV(vbkblock->getHeader(), vbktx);
         return atv;
     }
 
-    ATV endorseAltBlock(BlockHash hash, const std::vector<VTB> &vtbs) {
-        return endorseAltBlock(hash, vtbs, defaultPayoutInfo);
+    ATV endorseAltBlock(BlockHash hash) {
+        return endorseAltBlock(hash, defaultPayoutInfo);
     }
 
     CBlock endorseAltBlockAndMine(const std::vector<BlockHash> &hashes,
@@ -127,7 +124,8 @@ struct E2eFixture : public TestChain100Setup {
     CBlock endorseAltBlockAndMine(const std::vector<BlockHash> &hashes,
                                   BlockHash prevBlock,
                                   const std::vector<uint8_t> &payoutInfo,
-                                  size_t generateVtbs = 0) {
+                                  size_t generateVtbs = 0,
+                                  bool expectAccepted = false) {
         std::vector<VTB> vtbs;
         vtbs.reserve(generateVtbs);
         std::generate_n(std::back_inserter(vtbs), generateVtbs,
@@ -137,21 +135,27 @@ struct E2eFixture : public TestChain100Setup {
         atvs.reserve(hashes.size());
         std::transform(hashes.begin(), hashes.end(), std::back_inserter(atvs),
                        [&](const BlockHash &hash) -> ATV {
-                           return endorseAltBlock(hash, {}, payoutInfo);
+                           return endorseAltBlock(hash, payoutInfo);
                        });
 
-        BOOST_CHECK_EQUAL(atvs.size(), hashes.size());
-        auto &pop_mempool = *pop->mempool;
+        auto &pop_mempool = VeriBlock::GetPop().getMemPool();
+        altintegration::ValidationState state;
+        for (const auto &atv : atvs) {
+            pop_mempool.submit(atv, state);
+            // do not check the submit result - expect statefully invalid data
+            // for testing purposes
+        }
 
         for (const auto &vtb : vtbs) {
-            pop_mempool.submit(vtb, state_);
+            pop_mempool.submit(vtb, state);
+            // do not check the submit result - expect statefully invalid data
+            // for testing purposes
         }
 
-        for (const auto &atv : atvs) {
-            pop_mempool.submit(atv, state_);
-        }
-
-        return CreateAndProcessBlock({}, cbKey);
+        bool isValid = false;
+        const auto &block = CreateAndProcessBlock({}, cbKey, &isValid);
+        BOOST_CHECK(isValid);
+        return block;
     }
 
     CBlock endorseAltBlockAndMine(BlockHash hash, BlockHash prevBlock,
@@ -187,34 +191,33 @@ struct E2eFixture : public TestChain100Setup {
                                    std::to_string(height));
         }
 
-        auto btctx =
-            popminer.createBtcTxEndorsingVbkBlock(endorsed->getHeader());
-        auto *btccontaining = popminer.mineBtcBlocks(1);
-        auto vbktx = popminer.createVbkPopTxEndorsingVbkBlock(
-            btccontaining->getHeader(), btctx, endorsed->getHeader(),
-            getLastKnownBTCblock());
-        auto *vbkcontaining = popminer.mineVbkBlocks(1);
-
-        auto vtbs = popminer.vbkPayloads[vbkcontaining->getHash()];
-        BOOST_CHECK(vtbs.size() == 1);
-        return vtbs[0];
+        return popminer.endorseVbkBlock(endorsed->getHeader(),
+                                        getLastKnownBTCblock());
     }
 
-    PublicationData
-    createPublicationData(CBlockIndex *endorsed,
-                          const std::vector<uint8_t> &payoutInfo) {
-        PublicationData p;
+    PublicationData createPublicationData(CBlockIndex* endorsed, const std::vector<uint8_t>& payoutInfo)
+    {
+        assert(endorsed);
 
-        auto &config = *VeriBlock::GetPop().config;
-        p.identifier = config.alt->getIdentifier();
-        p.payoutInfo = payoutInfo;
+        auto hash = endorsed->GetBlockHash();
+        CBlock block;
+        bool read = ReadBlockFromDisk(block, endorsed, Params().GetConsensus());
+        assert(read && "expected to read endorsed block from disk");
 
-        // serialize block header
         CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
         stream << endorsed->GetBlockHeader();
-        p.header = std::vector<uint8_t>{stream.begin(), stream.end()};
+        std::vector<uint8_t> header{stream.begin(), stream.end()};
 
-        return p;
+        auto txRoot = BlockMerkleRoot(block, nullptr).asVector();
+        auto* libendorsed = VeriBlock::GetPop().getAltBlockTree().getBlockIndex(hash.asVector());
+        assert(libendorsed && "expected to have endorsed header in library");
+        return altintegration::GeneratePublicationData(
+            header,
+            *libendorsed,
+            std::vector<uint8_t>(txRoot.begin(), txRoot.end()),
+            block.popData,
+            payoutInfo,
+            VeriBlock::GetPop().getConfig().getAltParams());
     }
 
     PublicationData createPublicationData(CBlockIndex *endorsed) {

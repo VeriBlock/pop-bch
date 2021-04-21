@@ -24,7 +24,6 @@
 #include <vbk/util.hpp>
 #include <veriblock/pop.hpp>
 
-
 namespace VeriBlock {
 
 static std::vector<altintegration::PopData> disconnected_popdata;
@@ -46,7 +45,8 @@ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
 bool checkPopDataSize(const altintegration::PopData &popData,
                       altintegration::ValidationState &state) {
     uint32_t nPopDataSize = ::GetSerializeSize(popData, CLIENT_VERSION);
-    if (nPopDataSize >= GetPop().getConfig().getAltParams().getMaxPopDataSize()) {
+    if (nPopDataSize >=
+        GetPop().getConfig().getAltParams().getMaxPopDataSize()) {
         return state.Invalid("popdata-overisize",
                              "popData raw size more than allowed");
     }
@@ -69,8 +69,9 @@ bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
     altintegration::ValidationState instate;
 
     if (!GetPop().check(block.popData, instate)) {
-        return error("[%s] block %s is not accepted because popData is invalid: %s", __func__, block.GetHash().ToString(),
-            instate.toString());
+        return error(
+            "[%s] block %s is not accepted because popData is invalid: %s",
+            __func__, block.GetHash().ToString(), instate.toString());
     }
 
     GetPop().getAltBlockTree().acceptBlock(
@@ -93,15 +94,15 @@ void removePayloadsFromMempool(const altintegration::PopData &popData) {
 void updatePopMempoolForReorg() {
     AssertLockHeld(cs_main);
     altintegration::ValidationState state;
-    auto& popmp = VeriBlock::GetPop().getMemPool();
+    auto &popmp = VeriBlock::GetPop().getMemPool();
     for (const auto &popData : disconnected_popdata) {
-        for (const auto& i : popData.context) {
+        for (const auto &i : popData.context) {
             popmp.submit(i, state);
         }
-        for (const auto& i : popData.vtbs) {
+        for (const auto &i : popData.vtbs) {
             popmp.submit(i, state);
         }
-        for (const auto& i : popData.atvs) {
+        for (const auto &i : popData.atvs) {
             popmp.submit(i, state);
         }
     }
@@ -126,29 +127,27 @@ void SetPop(CDBWrapper &db) {
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
 }
 
-altintegration::PopData getPopData(const CBlockIndex& pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
-{
+altintegration::PopData getPopData(const CBlockIndex &pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
 
-    std::vector<uint8_t> prevHash{pindexPrev.GetBlockHash().begin(), pindexPrev.GetBlockHash().end()};
-    return GetPop().generatePopData(prevHash);
+    auto prevHash = pindexPrev.GetBlockHash().asVector();
+    auto res = GetPop().generatePopData(prevHash);
+    return res;
 }
 
-bool hasPopData(CBlockTreeDB& db)
-{
+bool hasPopData(CBlockTreeDB &db) {
     return db.Exists(tip_key<altintegration::BtcBlock>()) &&
            db.Exists(tip_key<altintegration::VbkBlock>()) &&
            db.Exists(tip_key<altintegration::AltBlock>());
 }
 
-void saveTrees(CDBBatch* batch)
-{
+void saveTrees(CDBBatch *batch) {
     AssertLockHeld(cs_main);
     VeriBlock::BlockBatch b(*batch);
     GetPop().saveAllTrees(b);
 }
-bool loadTrees(CDBWrapper& db)
-{
+bool loadTrees(CDBWrapper &db) {
     altintegration::ValidationState state;
 
     BlockReader reader(db);
@@ -170,11 +169,13 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
     auto &pop = GetPop();
     auto &cfg = pop.getConfig();
 
-    if (pindexPrev.nHeight < (int)cfg.getAltParams().getEndorsementSettlementInterval()) {
+    if (pindexPrev.nHeight <
+        (int)cfg.getAltParams().getEndorsementSettlementInterval()) {
         return {};
     }
 
-    if (pindexPrev.nHeight < (int)cfg.getAltParams().getPayoutParams().getPopPayoutDelay()) {
+    if (pindexPrev.nHeight <
+        (int)cfg.getAltParams().getPayoutParams().getPopPayoutDelay()) {
         return {};
     }
 
@@ -376,11 +377,13 @@ int compareForks(const CBlockIndex &leftForkTip,
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
-    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().vbk(), blocks);
+    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().vbk(),
+                                              blocks);
 }
 std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
-    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(), blocks);
+    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(),
+                                              blocks);
 }
 
 } // namespace VeriBlock

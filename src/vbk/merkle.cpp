@@ -69,20 +69,4 @@ bool isKeystone(const CBlockIndex &block) {
     return (block.nHeight % keystoneInterval) == 0;
 }
 
-CTxOut AddPopDataRootIntoCoinbaseCommitment(const CBlock &block) {
-    CTxOut out;
-    out.nValue = Amount::zero();
-    out.scriptPubKey.resize(37);
-    out.scriptPubKey[0] = OP_RETURN;
-    out.scriptPubKey[1] = 0x23;
-    out.scriptPubKey[2] = 0x3a;
-    out.scriptPubKey[3] = 0xe6;
-    out.scriptPubKey[4] = 0xca;
-
-    uint256 popMerkleRoot = BlockMerkleRoot(block);
-    memcpy(&out.scriptPubKey[5], popMerkleRoot.begin(), 32);
-
-    return out;
-}
-
 } // namespace VeriBlock

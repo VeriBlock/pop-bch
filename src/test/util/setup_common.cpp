@@ -184,7 +184,8 @@ TestChain100Setup::TestChain100Setup() {
 // scriptPubKey, and try to add it to the current chain.
 //
 CBlock TestChain100Setup::CreateAndProcessBlock(
-    const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey) {
+    const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey,
+    bool *isBlockValid) {
     const Config &config = GetConfig();
     std::unique_ptr<CBlockTemplate> pblocktemplate =
         BlockAssembler(config, *m_node.mempool).CreateNewBlock(scriptPubKey);
@@ -220,7 +221,10 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
 
     std::shared_ptr<const CBlock> shared_pblock =
         std::make_shared<const CBlock>(block);
-    ProcessNewBlock(config, shared_pblock, true, nullptr);
+    bool isValid = ProcessNewBlock(config, shared_pblock, true, nullptr);
+    if (isBlockValid != nullptr) {
+        *isBlockValid = isValid;
+    }
 
     CBlock result = block;
     return result;
