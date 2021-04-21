@@ -75,6 +75,10 @@ void addDisconnectedPopdata(const altintegration::PopData &popData)
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks);
 std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks);
 
+bool isPopEnabled();
+
+bool isPopEnabled(int32_t height);
+
 } // namespace VeriBlock
 
 #endif

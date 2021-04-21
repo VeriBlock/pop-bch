@@ -165,7 +165,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
     // VeriBlock: add PopData into the block
-    if (chainParams.isPopEnabled(nHeight)) {
+    if (chainParams.isPopActive(nHeight)) {
         pblock->popData = VeriBlock::getPopData(*pindexPrev);
     }
     if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() ||
@@ -204,7 +204,9 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     // VeriBlock add pop rewards
-    VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev);
+    if (VeriBlock::isPopEnabled()) {
+        VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev);
+    }
 
     const std::vector<CTxDestination> whitelisted =
         GetMinerFundWhitelist(consensusParams, pindexPrev);

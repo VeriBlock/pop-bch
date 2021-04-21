@@ -19,18 +19,37 @@
 
 namespace VeriBlock {
 
-extern KeystoneArray
-getKeystoneHashesForTheNextBlock(const CBlockIndex *pindexPrev);
-
 namespace {
-    void checkPopActivation() {
-        auto h = ::ChainActive().Height();
-        if(!Params().isPopEnabled(h)) {
-            throw std::runtime_error("This RPC is disabled, because POP is not activated. Will be active at height=" + std::to_string(h));
+    void EnsurePopEnabled() {
+        if (!VeriBlock::isPopEnabled()) {
+            throw JSONRPCError(RPC_MISC_ERROR,
+                               strprintf("POP protocol is not enabled. "
+                                         "Current=%d, bootstrap height=%d",
+                                         ChainActive().Height(),
+                                         VeriBlock::GetPop()
+                                             .getConfig()
+                                             .getAltParams()
+                                             .getBootstrapBlock()
+                                             .getHeight()));
         }
     }
 
+    void EnsurePopActive() {
+        auto tipheight = ChainActive().Height();
+        if (!Params().isPopActive(tipheight)) {
+            throw JSONRPCError(
+                RPC_MISC_ERROR,
+                strprintf("POP protocol is not active. Current=%d, activation "
+                          "height=%d",
+                          tipheight,
+                          Params().GetConsensus().VeriBlockPopSecurityHeight)
 
+            );
+        }
+    }
+} // namespace
+
+namespace {
     BlockHash GetBlockHashByHeight(const int height) {
         if (height < 0 || height > ChainActive().Height())
             throw JSONRPCError(RPC_INVALID_PARAMETER,
@@ -119,7 +138,8 @@ UniValue getpopdata(const Config &config, const JSONRPCRequest &request) {
         // we build authctx based on previous block
         VeriBlock::GetAltBlockIndex(pBlockIndex->pprev),
         VeriBlock::GetPop().getConfig().getAltParams());
-    result.pushKV("authenticated_context", altintegration::ToJSON<UniValue>(authctx));
+    result.pushKV("authenticated_context",
+                  altintegration::ToJSON<UniValue>(authctx));
 
     auto lastVBKBlocks = VeriBlock::getLastKnownVBKBlocks(16);
 
@@ -164,60 +184,68 @@ bool parsePayloads(const UniValue &array, std::vector<pop_t> &out,
     return true;
 }
 
-UniValue submitpop(const Config &config, const JSONRPCRequest &request) {
-    checkPopActivation();
+template <typename T>
+static void logSubmitResult(const std::string idhex, const altintegration::MemPool::SubmitResult& result, const altintegration::ValidationState& state)
+{
+    if (!result.isAccepted()) {
+        LogPrintf("rejected to add %s=%s to POP mempool: %s\n", T::name(), idhex, state.toString());
+    } else {
+        auto s = strprintf("(state: %s)", state.toString());
+        LogPrintf("accepted %s=%s to POP mempool %s\n", T::name(), idhex, (state.IsValid() ? "" : s));
+    }
+}
 
-    if (request.fHelp || request.params.size() > 3)
-        throw std::runtime_error(
-            "submitpop [vbk_blocks] [vtbs] [atvs]\n"
-            "\nCreates and submits a PoP transaction constructed from the "
-            "provided ATV and VTBs.\n"
-            "\nArguments:\n"
-            "1. vbk_blocks      (array, required) Array of hex-encoded "
-            "VbkBlocks records.\n"
-            "2. vtbs      (array, required) Array of hex-encoded VTB records.\n"
-            "3. atvs      (array, required) Array of hex-encoded ATV records.\n"
-            "\nResult:\n"
-            "             (string) MempoolResult\n"
-            "\nExamples:\n" +
-            HelpExampleCli(
-                "submitpop",
-                " [VBK_HEX VBK_HEX] [VTB_HEX VTB_HEX] [ATV_HEX ATV_HEX]") +
-            HelpExampleRpc("submitpop", "[VBK_HEX] [] [ATV_HEX ATV_HEX]"));
+void check_submitpop(const JSONRPCRequest& request, const std::string& popdata)
+{
+    auto cmdname = strprintf("submitpop%s", popdata);
+    RPCHelpMan{
+        cmdname,
+        "Submit " + popdata,
+        {
+            {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Serialized " + popdata},
+        },
+        {},
+        RPCExamples{
+            HelpExampleCli(cmdname, "\"<hex>\"") +
+            HelpExampleRpc(cmdname, "\"<hex>\"")},
+    }
+        .Check(request);
+}
 
-    RPCTypeCheck(request.params,
-                 {UniValue::VARR, UniValue::VARR, UniValue::VARR});
+template <typename Pop>
+UniValue submitpopIt(const JSONRPCRequest &request) {
+    check_submitpop(request, Pop::name());
 
-    altintegration::PopData popData;
+    EnsurePopEnabled();
+    EnsurePopActive();
+
+    auto payloads_bytes = ParseHexV(request.params[0].get_str(), Pop::name());
+
+    Pop data;
+    altintegration::ReadStream stream(payloads_bytes);
     altintegration::ValidationState state;
-    bool ret = true;
-    ret = ret && parsePayloads<altintegration::VbkBlock>(
-                     request.params[0].get_array(), popData.context, state);
-    ret = ret && parsePayloads<altintegration::VTB>(
-                     request.params[1].get_array(), popData.vtbs, state);
-    ret = ret && parsePayloads<altintegration::ATV>(
-                     request.params[2].get_array(), popData.atvs, state);
-
-    if (!ret) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, state.GetPath());
+    if (!altintegration::DeserializeFromVbkEncoding(stream, data, state)) {
+        return state.Invalid("bad-data");
     }
 
-    //TODO: separate submit RPC
-    {
-        LOCK(cs_main);
-        auto& popmp = VeriBlock::GetPop().getMemPool();
-        for (const auto& i : popData.context) {
-            popmp.submit(i, state);
-        }
-        for (const auto& i : popData.vtbs) {
-            popmp.submit(i, state);
-        }
-        for (const auto& i : popData.atvs) {
-            popmp.submit(i, state);
-        }
+    LOCK(cs_main);
+    auto &mp = VeriBlock::GetPop().getMemPool();
+    auto idhex = data.getId().toHex();
+    auto result = mp.submit<Pop>(data, state);
+    logSubmitResult<Pop>(idhex, result, state);
 
-        return altintegration::ToJSON<UniValue>(state);
-    }
+    bool accepted = result.isAccepted();
+    return altintegration::ToJSON<UniValue>(state, &accepted);
+}
+
+UniValue submitpopatv(const Config &config, const JSONRPCRequest &request) {
+    return submitpopIt<altintegration::ATV>(request);
+}
+UniValue submitpopvtb(const Config &config, const JSONRPCRequest &request) {
+    return submitpopIt<altintegration::VTB>(request);
+}
+UniValue submitpopvbk(const Config &config, const JSONRPCRequest &request) {
+    return submitpopIt<altintegration::VbkBlock>(request);
 }
 
 using VbkTree = altintegration::VbkBlockTree;
@@ -572,7 +600,8 @@ namespace {
         }
 
         if (!fVerbose) {
-            return altintegration::ToJSON<UniValue>(altintegration::SerializeToHex(out));
+            return altintegration::ToJSON<UniValue>(
+                altintegration::SerializeToHex(out));
         }
 
         uint256 activeHashBlock{};
@@ -627,7 +656,9 @@ namespace {
 } // namespace
 
 const CRPCCommand commands[] = {
-    {"pop_mining", "submitpop", submitpop, {"atv", "vtbs"}},
+    {"pop_mining", "submitpopatv", submitpopatv, {"atv"}},
+    {"pop_mining", "submitpopvtb", submitpopvtb, {"vtb"}},
+    {"pop_mining", "submitpopvbk", submitpopvbk, {"vbkblock"}},
     {"pop_mining", "getpopdata", getpopdata, {"blockheight"}},
     {"pop_mining", "getvbkblock", getvbkblock, {"hash"}},
     {"pop_mining", "getbtcblock", getbtcblock, {"hash"}},

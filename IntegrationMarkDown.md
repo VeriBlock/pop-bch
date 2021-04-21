@@ -1931,7 +1931,7 @@ struct E2eFixture : public TestChain100Setup {
         CScript scriptPubKey =
         CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
 
-        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
+        while (!Params().isPopActive(ChainActive().Tip()->nHeight)) {
             CBlock b = CreateAndProcessBlock({}, scriptPubKey);
             m_coinbase_txns.push_back(b.vtx[0]);
         }
@@ -3386,7 +3386,7 @@ Before we start implementing the pop forkresolution algorithm, we will make a sh
 [<font style="color: red">chainparams.h</font>]
 ```diff
      // VeriBlock
-+    bool isPopEnabled(int height) const {
++    bool isPopActive(int height) const {
 +        return height >= consensus.VeriBlockPopSecurityHeight;
 +    }
      uint32_t PopRewardPercentage() const { return mPopRewardPercentage; }
@@ -3405,13 +3405,13 @@ Update all places where comparison with the VeriBlockPopSecurityHeight parameter
 ```diff
     // VeriBlock: add PopData into the block
 -   if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
-+   if (chainParams.isPopEnabled(nHeight)) {
++   if (chainParams.isPopActive(nHeight)) {
         pblock->popData = VeriBlock::getPopData();
     }
 ...
     // VeriBlock: add payloads commitment
 -   if (consensusParams.VeriBlockPopSecurityHeight <= nHeight) {
-+   if (chainParams.isPopEnabled(nHeight)) {
++   if (chainParams.isPopActive(nHeight)) {
         CTxOut popOut =
             VeriBlock::AddPopDataRootIntoCoinbaseCommitment(*pblock);
         coinbaseTx.vout.push_back(popOut);
@@ -3435,7 +3435,7 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 -    if (prevIndex == nullptr ||
 -        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
 +                               bool *mutated) {
-+    if (prevIndex == nullptr || !Params().isPopEnabled(prevIndex->nHeight + 1)) {
++    if (prevIndex == nullptr || !Params().isPopActive(prevIndex->nHeight + 1)) {
         return BlockMerkleRoot(block);
     }
 ...
@@ -3453,7 +3453,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
 ...
  if (prevIndex == nullptr ||
 -        param.VeriBlockPopSecurityHeight > (prevIndex->nHeight + 1)) {
-+        !Params().isPopEnabled(prevIndex->nHeight + 1)) {
++        !Params().isPopActive(prevIndex->nHeight + 1)) {
         return true;
     }
 }
@@ -3468,7 +3468,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
 ```diff
 -    if (param.GetConsensus().VeriBlockPopSecurityHeight >
 -        (pindexPrev.nHeight)) {
-+    if (!param.isPopEnabled(pindexPrev.nHeight)) {
++    if (!param.isPopActive(pindexPrev.nHeight)) {
         return {};
     }
 ...
@@ -3476,7 +3476,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
 -                          const Consensus::Params &consensusParams) {
 -    if (height >= consensusParams.VeriBlockPopSecurityHeight) {
 +Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
-+    if (Params().isPopEnabled(height)) {
++    if (Params().isPopActive(height)) {
 ```
 [<font style="color: red">vbk/test/util/e2e_fixture.hpp</font>]
 ```diff
@@ -3487,7 +3487,7 @@ bool VerifyTopLevelMerkleRoot(const CBlock &block, const CBlockIndex *prevIndex,
 +        CScript scriptPubKey =
 +            CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
 
-+        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
++        while (!Params().isPopActive(ChainActive().Tip()->nHeight)) {
 +            CBlock b = CreateAndProcessBlock({}, scriptPubKey);
 +            m_coinbase_txns.push_back(b.vtx[0]);
 +        }
@@ -3524,7 +3524,7 @@ CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
     }
 
     int result = 0;
-    if (Params().isPopEnabled(tip->nHeight)) {
+    if (Params().isPopActive(tip->nHeight)) {
         result = compareForks(*tip, *candidate);
     } else {
         result = CBlockIndexWorkComparator()(tip, candidate) == true ? -1 : 1;
@@ -3591,7 +3591,7 @@ bool CChainState::MarkBlockAsFinal(const Config &config,
                                    const CBlockIndex *pindex) {
     AssertLockHeld(cs_main);
 +    // VeriBlock
-+    if (config.GetChainParams().isPopEnabled(pindex->nHeight)) {
++    if (config.GetChainParams().isPopActive(pindex->nHeight)) {
 +        return true;
 +    }
 ...
@@ -3621,7 +3621,7 @@ bool CChainState::MarkBlockAsFinal(const Config &config,
 
 +        int popComparisonResult = 0;
 
-+        if (Params().isPopEnabled(bestCandidate->nHeight)) {
++        if (Params().isPopActive(bestCandidate->nHeight)) {
 +            popComparisonResult =
 +                VeriBlock::compareForks(*bestCandidate, *pindexNew);
 +        } else {

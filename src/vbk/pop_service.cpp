@@ -162,7 +162,7 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
     AssertLockHeld(cs_main);
     auto &param = Params();
 
-    if (!param.isPopEnabled(pindexPrev.nHeight)) {
+    if (!param.isPopActive(pindexPrev.nHeight)) {
         return {};
     }
 
@@ -303,7 +303,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
 }
 
 Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
-    if (Params().isPopEnabled(height)) {
+    if (Params().isPopActive(height)) {
         // int64_t powRewardPercentage = 100 - Params().PopRewardPercentage();
         // subsidy = powRewardPercentage * subsidy;
         // subsidy = subsidy / 100;
@@ -330,7 +330,7 @@ CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
     }
 
     int result = 0;
-    if (Params().isPopEnabled(tip->nHeight)) {
+    if (Params().isPopActive(tip->nHeight)) {
         result = compareForks(*tip, *candidate);
     } else {
         result = CBlockIndexWorkComparator()(tip, candidate) == true ? -1 : 1;
@@ -384,6 +384,21 @@ std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
     return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(),
                                               blocks);
+}
+
+bool isPopEnabled()
+{
+    auto* tip = ChainActive().Tip();
+    if (tip != nullptr) {
+        return isPopEnabled(tip->nHeight);
+    }
+    return false;
+}
+
+bool isPopEnabled(int32_t height)
+{
+    auto block = VeriBlock::GetPop().getConfig().getAltParams().getBootstrapBlock();
+    return height >= block.getHeight();
 }
 
 } // namespace VeriBlock

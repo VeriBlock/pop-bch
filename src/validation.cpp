@@ -2289,7 +2289,7 @@ bool CChainState::MarkBlockAsFinal(const Config &config,
                                    const CBlockIndex *pindex) {
     AssertLockHeld(cs_main);
     // VeriBlock
-    if (config.GetChainParams().isPopEnabled(pindex->nHeight)) {
+    if (config.GetChainParams().isPopActive(pindex->nHeight)) {
         return true;
     }
 
@@ -2559,7 +2559,7 @@ CBlockIndex *CChainState::FindBestChain() {
 
         int popComparisonResult = 0;
 
-        if (Params().isPopEnabled(bestCandidate->nHeight)) {
+        if (Params().isPopActive(bestCandidate->nHeight)) {
             popComparisonResult =
                 VeriBlock::compareForks(*bestCandidate, *pindexNew);
         } else {
@@ -3842,7 +3842,7 @@ static bool ContextualCheckBlockHeader(const CChainParams &params,
 
     // VeriBlock validation
     if ((block.nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) &&
-        !params.isPopEnabled(nHeight)) {
+        !params.isPopActive(nHeight)) {
         return state.Invalid(
             BlockValidationResult::BLOCK_INVALID_HEADER, REJECT_OBSOLETE,
             strprintf("bad-pop-version(0x%08x)", block.nVersion),

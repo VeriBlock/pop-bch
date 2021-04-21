@@ -51,7 +51,7 @@ struct E2eFixture : public TestChain100Setup {
         CScript scriptPubKey =
             CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
 
-        while (!Params().isPopEnabled(ChainActive().Tip()->nHeight)) {
+        while (!Params().isPopActive(ChainActive().Tip()->nHeight)) {
             CBlock b = CreateAndProcessBlock({}, scriptPubKey);
             m_coinbase_txns.push_back(b.vtx[0]);
         }
