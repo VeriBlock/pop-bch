@@ -403,6 +403,7 @@ target_compile_definitions(util PUBLIC BOOST_SP_USE_STD_ATOMIC BOOST_AC_USE_STD_
 add_library(common
   	vbk/pop_common.cpp
 	vbk/merkle.cpp
+	vbk/genesis_common.cpp
 	amount.cpp
 	base58.cpp
 	bloom.cpp
