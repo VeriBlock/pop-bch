@@ -50,14 +50,6 @@ namespace {
 } // namespace
 
 namespace {
-    BlockHash GetBlockHashByHeight(const int height) {
-        if (height < 0 || height > ChainActive().Height())
-            throw JSONRPCError(RPC_INVALID_PARAMETER,
-                               "Block height out of range");
-
-        return ChainActive()[height]->GetBlockHash();
-    }
-
     CBlock GetBlockChecked(const CBlockIndex *pblockindex) {
         CBlock block;
         if (IsBlockPruned(pblockindex)) {
@@ -733,6 +725,7 @@ const CRPCCommand commands[] = {
     {"pop_mining", "submitpopvtb", submitpopvtb, {"vtb"}},
     {"pop_mining", "submitpopvbk", submitpopvbk, {"vbkblock"}},
     {"pop_mining", "getpopdatabyheight", getpopdatabyheight, {"blockheight"}},
+    {"pop_mining", "getpopdatabyhash", getpopdatabyhash, {"hash"}},
     {"pop_mining", "getvbkblock", getvbkblock, {"hash"}},
     {"pop_mining", "getbtcblock", getbtcblock, {"hash"}},
     {"pop_mining", "getvbkbestblockhash", getvbkbestblockhash, {}},

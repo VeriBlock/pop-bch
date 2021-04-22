@@ -200,12 +200,12 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
     coinbaseTx.vout[0].nValue =
-        nFees + GetBlockSubsidy(nHeight, consensusParams);
+        nFees + GetBlockSubsidy(nHeight, chainParams);
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     // VeriBlock add pop rewards
     if (VeriBlock::isPopEnabled()) {
-        VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev);
+        VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev, chainParams);
     }
 
     const std::vector<CTxDestination> whitelisted =

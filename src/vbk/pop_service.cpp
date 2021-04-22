@@ -26,95 +26,7 @@
 
 namespace VeriBlock {
 
-static std::vector<altintegration::PopData> disconnected_popdata;
-
-bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
-    AssertLockHeld(cs_main);
-    auto containing = VeriBlock::blockToAltBlock(indexNew);
-    altintegration::ValidationState instate;
-    if (!GetPop().getAltBlockTree().acceptBlockHeader(containing, instate)) {
-        LogPrintf("ERROR: alt tree cannot accept block %s\n",
-                  instate.toString());
-        return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
-                             REJECT_INVALID, "", "instate.GetDebugMessage()");
-    }
-
-    return true;
-}
-
-bool checkPopDataSize(const altintegration::PopData &popData,
-                      altintegration::ValidationState &state) {
-    uint32_t nPopDataSize = ::GetSerializeSize(popData, CLIENT_VERSION);
-    if (nPopDataSize >=
-        GetPop().getConfig().getAltParams().getMaxPopDataSize()) {
-        return state.Invalid("popdata-overisize",
-                             "popData raw size more than allowed");
-    }
-
-    return true;
-}
-
-bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
-    AssertLockHeld(cs_main);
-    auto bootstrapBlockHeight =
-        GetPop().getConfig().getAltParams().getBootstrapBlock().height;
-    auto hash = block.GetHash();
-    auto *index = LookupBlockIndex(hash);
-
-    if (index->nHeight == bootstrapBlockHeight) {
-        // skip bootstrap block block
-        return true;
-    }
-
-    altintegration::ValidationState instate;
-
-    if (!GetPop().check(block.popData, instate)) {
-        return error(
-            "[%s] block %s is not accepted because popData is invalid: %s",
-            __func__, block.GetHash().ToString(), instate.toString());
-    }
-
-    GetPop().getAltBlockTree().acceptBlock(
-        std::vector<uint8_t>{hash.begin(), hash.end()}, block.popData);
-
-    return true;
-}
-
-bool setState(const BlockHash &hash, altintegration::ValidationState &state) {
-    AssertLockHeld(cs_main);
-    return GetPop().getAltBlockTree().setState(
-        std::vector<uint8_t>{hash.begin(), hash.end()}, state);
-}
-
-void removePayloadsFromMempool(const altintegration::PopData &popData) {
-    AssertLockHeld(cs_main);
-    GetPop().getMemPool().removeAll(popData);
-}
-
-void updatePopMempoolForReorg() {
-    AssertLockHeld(cs_main);
-    altintegration::ValidationState state;
-    auto &popmp = VeriBlock::GetPop().getMemPool();
-    for (const auto &popData : disconnected_popdata) {
-        for (const auto &i : popData.context) {
-            popmp.submit(i, state);
-        }
-        for (const auto &i : popData.vtbs) {
-            popmp.submit(i, state);
-        }
-        for (const auto &i : popData.atvs) {
-            popmp.submit(i, state);
-        }
-    }
-    disconnected_popdata.clear();
-}
-
-void addDisconnectedPopdata(const altintegration::PopData &popData) {
-    AssertLockHeld(cs_main);
-    disconnected_popdata.push_back(popData);
-}
-
-void SetPop(CDBWrapper &db) {
+void InitPopContext(CDBWrapper &db) {
     auto payloads_provider = std::make_shared<PayloadsProvider>(db);
     SetPop(payloads_provider);
 
@@ -125,190 +37,6 @@ void SetPop(CDBWrapper &db) {
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VTB>);
     app.getMemPool().onAccepted<altintegration::VbkBlock>(
         VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
-}
-
-altintegration::PopData getPopData(const CBlockIndex &pindexPrev)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
-    AssertLockHeld(cs_main);
-
-    auto prevHash = pindexPrev.GetBlockHash().asVector();
-    auto res = GetPop().generatePopData(prevHash);
-    return res;
-}
-
-bool hasPopData(CBlockTreeDB &db) {
-    return db.Exists(tip_key<altintegration::BtcBlock>()) &&
-           db.Exists(tip_key<altintegration::VbkBlock>()) &&
-           db.Exists(tip_key<altintegration::AltBlock>());
-}
-
-void saveTrees(CDBBatch *batch) {
-    AssertLockHeld(cs_main);
-    VeriBlock::BlockBatch b(*batch);
-    GetPop().saveAllTrees(b);
-}
-bool loadTrees(CDBWrapper &db) {
-    altintegration::ValidationState state;
-
-    BlockReader reader(db);
-    if (!GetPop().loadAllTrees(reader, state)) {
-        return error("%s: failed to load trees %s", __func__, state.toString());
-    }
-
-    return true;
-}
-
-PoPRewards getPopRewards(const CBlockIndex &pindexPrev) {
-    AssertLockHeld(cs_main);
-    auto &param = Params();
-
-    if (!param.isPopActive(pindexPrev.nHeight)) {
-        return {};
-    }
-
-    auto &pop = GetPop();
-    auto &cfg = pop.getConfig();
-
-    if (pindexPrev.nHeight <
-        (int)cfg.getAltParams().getEndorsementSettlementInterval()) {
-        return {};
-    }
-
-    if (pindexPrev.nHeight <
-        (int)cfg.getAltParams().getPayoutParams().getPopPayoutDelay()) {
-        return {};
-    }
-
-    altintegration::ValidationState state;
-    auto hash = pindexPrev.GetBlockHash();
-    std::vector<uint8_t> v_hash{hash.begin(), hash.end()};
-
-    bool ret = pop.getAltBlockTree().setState(v_hash, state);
-    (void)ret;
-    assert(ret);
-
-    auto rewards = pop.getPopPayout(v_hash);
-    int halving =
-        (pindexPrev.nHeight + 1) / param.GetConsensus().nSubsidyHalvingInterval;
-    PoPRewards btcRewards{};
-    // erase rewards, that pay 0 satoshis and halve rewards
-    for (const auto &r : rewards) {
-        auto rewardValue = r.second;
-        rewardValue >>= halving;
-
-        if ((rewardValue != 0) && (halving < 64)) {
-            CScript key = CScript(r.first.begin(), r.first.end());
-            btcRewards[key] = param.PopRewardCoefficient() * rewardValue;
-        }
-    }
-
-    return btcRewards;
-}
-
-void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
-                                 const CBlockIndex &pindexPrev) {
-    AssertLockHeld(cs_main);
-    PoPRewards rewards = getPopRewards(pindexPrev);
-
-    assert(coinbaseTx.vout.size() == 1 &&
-           "at this place we should have only PoW payout here");
-
-    for (const auto &itr : rewards) {
-        CTxOut out;
-        out.scriptPubKey = itr.first;
-
-        out.nValue = itr.second * Amount::satoshi();
-        coinbaseTx.vout.push_back(out);
-    }
-}
-
-bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
-                                   const CBlockIndex &pindexPrev,
-                                   const Consensus::Params &consensusParams,
-                                   Amount &blockReward,
-                                   BlockValidationState &state) {
-    AssertLockHeld(cs_main);
-    PoPRewards rewards = getPopRewards(pindexPrev);
-    Amount nTotalPopReward = Amount::zero();
-
-    if (tx.vout.size() < rewards.size()) {
-        return state.Invalid(
-            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
-            "bad-pop-vouts-size",
-            strprintf(
-                "checkCoinbaseTxWithPopRewards(): coinbase has incorrect size "
-                "of pop vouts (actual vouts size=%d vs expected vouts=%d)",
-                tx.vout.size(), rewards.size()));
-    }
-
-    std::map<CScript, Amount> cbpayouts;
-    // skip first reward, as it is always PoW payout
-    for (auto out = tx.vout.begin() + 1, end = tx.vout.end(); out != end;
-         ++out) {
-        // pop payouts can not be null
-        if (out->IsNull()) {
-            continue;
-        }
-        cbpayouts[out->scriptPubKey] += out->nValue;
-    }
-
-    // skip first (regular pow) payout, and last 2 0-value payouts
-    for (const auto &payout : rewards) {
-        auto &script = payout.first;
-        Amount expectedAmount = payout.second * Amount::satoshi();
-
-        auto p = cbpayouts.find(script);
-        // coinbase pays correct reward?
-        if (p == cbpayouts.end()) {
-            // we expected payout for that address
-            return state.Invalid(
-                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
-                "bad-pop-missing-payout",
-                strprintf("[tx: %s] missing payout for scriptPubKey: '%s' with "
-                          "amount: '%d'",
-                          tx.GetHash().ToString(), HexStr(script),
-                          expectedAmount));
-        }
-
-        // payout found
-        Amount actualAmount{p->second};
-        // does it have correct amount?
-        if (actualAmount != expectedAmount) {
-            return state.Invalid(
-                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
-                "bad-pop-wrong-payout",
-                strprintf("[tx: %s] wrong payout for scriptPubKey: '%s'. "
-                          "Expected %d, got %d.",
-                          tx.GetHash().ToString(), HexStr(script),
-                          expectedAmount, actualAmount));
-        }
-
-        nTotalPopReward += expectedAmount;
-    }
-
-    Amount PoWBlockReward =
-        GetBlockSubsidy(pindexPrev.nHeight, consensusParams);
-
-    blockReward = nTotalPopReward + PoWBlockReward + nFees;
-
-    if (tx.GetValueOut() > blockReward) {
-        return state.Invalid(
-            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
-            "bad-cb-pop-amount",
-            strprintf("ConnectBlock(): coinbase pays too much (actual=%s vs "
-                      "limit=%s)",
-                      tx.GetValueOut().ToString(), blockReward.ToString()));
-    }
-    return true;
-}
-
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height) {
-    if (Params().isPopActive(height)) {
-        // int64_t powRewardPercentage = 100 - Params().PopRewardPercentage();
-        // subsidy = powRewardPercentage * subsidy;
-        // subsidy = subsidy / 100;
-    }
-    return subsidy;
 }
 
 CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
@@ -351,28 +79,194 @@ CBlockIndex *compareTipToBlock(CBlockIndex *candidate) {
     return tip;
 }
 
-int compareForks(const CBlockIndex &leftForkTip,
-                 const CBlockIndex &rightForkTip) {
+bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
+    AssertLockHeld(cs_main);
+    auto containing = VeriBlock::blockToAltBlock(indexNew);
+    altintegration::ValidationState instate;
+    if (!GetPop().getAltBlockTree().acceptBlockHeader(containing, instate)) {
+        LogPrintf("ERROR: alt tree cannot accept block %s\n",
+                  instate.toString());
+        return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
+                             REJECT_INVALID, "accept-block", instate.GetDebugMessage());
+    }
+
+    return true;
+}
+
+bool addAllBlockPayloads(const CBlock &block, BlockValidationState &state) {
+    AssertLockHeld(cs_main);
+    auto bootstrapBlockHeight =
+        GetPop().getConfig().getAltParams().getBootstrapBlock().height;
+    auto hash = block.GetHash();
+    auto *index = LookupBlockIndex(hash);
+
+    if (index->nHeight == bootstrapBlockHeight) {
+        // skip bootstrap block block
+        return true;
+    }
+
+    altintegration::ValidationState instate;
+
+    if (!GetPop().check(block.popData, instate)) {
+        return error(
+            "[%s] block %s is not accepted because popData is invalid: %s",
+            __func__, block.GetHash().ToString(), instate.toString());
+    }
+
+    GetPop().getAltBlockTree().acceptBlock(hash.asVector(), block.popData);
+
+    return true;
+}
+
+bool setState(const BlockHash &hash, altintegration::ValidationState &state) {
+    AssertLockHeld(cs_main);
+    return GetPop().getAltBlockTree().setState(hash.asVector(), state);
+}
+
+altintegration::PopData getPopData(const CBlockIndex &pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
 
+    auto prevHash = pindexPrev.GetBlockHash().asVector();
+    return GetPop().generatePopData(prevHash);
+}
+
+PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& params) {
+    AssertLockHeld(cs_main);
     auto &pop = GetPop();
 
-    if (&leftForkTip == &rightForkTip) {
-        return 0;
+    if (!params.isPopActive(pindexPrev.nHeight)) {
+        return {};
     }
 
-    auto left = blockToAltBlock(leftForkTip);
-    auto right = blockToAltBlock(rightForkTip);
-    auto state = altintegration::ValidationState();
+    auto &cfg = pop.getConfig();
+    if (pindexPrev.nHeight <
+        (int)cfg.getAltParams().getEndorsementSettlementInterval()) {
+        return {};
+    }
 
-    if (!pop.getAltBlockTree().setState(left.hash, state)) {
-        if (!pop.getAltBlockTree().setState(right.hash, state)) {
-            throw std::logic_error("both chains are invalid");
+    if (pindexPrev.nHeight <
+        (int)cfg.getAltParams().getPayoutParams().getPopPayoutDelay()) {
+        return {};
+    }
+
+    altintegration::ValidationState state;
+    auto prevHash = pindexPrev.GetBlockHash().asVector();
+    bool ret = pop.getAltBlockTree().setState(prevHash, state);
+    (void)ret;
+    assert(ret);
+
+    auto rewards = pop.getPopPayout(prevHash);
+    int halving =
+        (pindexPrev.nHeight + 1) / params.GetConsensus().nSubsidyHalvingInterval;
+    PoPRewards result{};
+    // erase rewards, that pay 0 satoshis and halve rewards
+    for (const auto &r : rewards) {
+        auto rewardValue = r.second;
+        rewardValue >>= halving;
+
+        if ((rewardValue != 0) && (halving < 64)) {
+            CScript key = CScript(r.first.begin(), r.first.end());
+            result[key] = params.PopRewardCoefficient() * rewardValue;
         }
-        return -1;
     }
 
-    return pop.getAltBlockTree().comparePopScore(left.hash, right.hash);
+    return result;
+}
+
+void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
+                                 const CBlockIndex &pindexPrev,
+                                 const CChainParams& params) {
+    AssertLockHeld(cs_main);
+    PoPRewards rewards = getPopRewards(pindexPrev, params);
+    assert(coinbaseTx.vout.size() == 1 &&
+           "at this place we should have only PoW payout here");
+    for (const auto &itr : rewards) {
+        CTxOut out;
+        out.scriptPubKey = itr.first;
+        out.nValue = itr.second * Amount::satoshi();
+        coinbaseTx.vout.push_back(out);
+    }
+}
+
+bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
+                                   const CBlockIndex &pindex,
+                                   const CChainParams& params,
+                                   Amount &blockReward,
+                                   BlockValidationState &state) {
+    AssertLockHeld(cs_main);
+    PoPRewards expectedRewards = getPopRewards(*pindex.pprev, params);
+    Amount nTotalPopReward = Amount::zero();
+
+    if (tx.vout.size() < expectedRewards.size()) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+            "bad-pop-vouts-size",
+            strprintf(
+                "checkCoinbaseTxWithPopRewards(): coinbase has incorrect size "
+                "of pop vouts (actual vouts size=%d vs expected vouts=%d)",
+                tx.vout.size(), expectedRewards.size()));
+    }
+
+    std::map<CScript, Amount> cbpayouts;
+    // skip first reward, as it is always PoW payout
+    for (auto out = tx.vout.begin() + 1, end = tx.vout.end(); out != end;
+         ++out) {
+        // pop payouts can not be null
+        if (out->IsNull()) {
+            continue;
+        }
+        cbpayouts[out->scriptPubKey] += out->nValue;
+    }
+
+    // skip first (regular pow) payout, and last 2 0-value payouts
+    for (const auto &payout : expectedRewards) {
+        auto &script = payout.first;
+        Amount expectedAmount = payout.second * Amount::satoshi();
+
+        auto p = cbpayouts.find(script);
+        // coinbase pays correct reward?
+        if (p == cbpayouts.end()) {
+            // we expected payout for that address
+            return state.Invalid(
+                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+                "bad-pop-missing-payout",
+                strprintf("[tx: %s] missing payout for scriptPubKey: '%s' with "
+                          "amount: '%d'",
+                          tx.GetHash().ToString(), HexStr(script),
+                          expectedAmount));
+        }
+
+        // payout found
+        auto& actualAmount = p->second;
+        // does it have correct amount?
+        if (actualAmount != expectedAmount) {
+            return state.Invalid(
+                BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+                "bad-pop-wrong-payout",
+                strprintf("[tx: %s] wrong payout for scriptPubKey: '%s'. "
+                          "Expected %d, got %d.",
+                          tx.GetHash().ToString(), HexStr(script),
+                          expectedAmount, actualAmount));
+        }
+
+        nTotalPopReward += expectedAmount;
+    }
+
+    Amount PoWBlockReward =
+        GetBlockSubsidy(pindex.nHeight, params);
+
+    blockReward = nTotalPopReward + PoWBlockReward + nFees;
+
+    if (tx.GetValueOut() > blockReward) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
+            "bad-cb-pop-amount",
+            strprintf("ConnectBlock(): coinbase pays too much (actual=%s vs "
+                      "limit=%s)",
+                      tx.GetValueOut().ToString(), blockReward.ToString()));
+    }
+    return true;
 }
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
@@ -384,6 +278,77 @@ std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
     AssertLockHeld(cs_main);
     return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(),
                                               blocks);
+}
+
+bool hasPopData(CBlockTreeDB &db) {
+    return db.Exists(tip_key<altintegration::BtcBlock>()) &&
+           db.Exists(tip_key<altintegration::VbkBlock>()) &&
+           db.Exists(tip_key<altintegration::AltBlock>());
+}
+
+void saveTrees(CDBBatch *batch) {
+    AssertLockHeld(cs_main);
+    VeriBlock::BlockBatch b(*batch);
+    GetPop().saveAllTrees(b);
+}
+bool loadTrees(CDBWrapper &db) {
+    altintegration::ValidationState state;
+
+    BlockReader reader(db);
+    if (!GetPop().loadAllTrees(reader, state)) {
+        return error("%s: failed to load trees %s", __func__, state.toString());
+    }
+
+    return true;
+}
+
+void removePayloadsFromMempool(const altintegration::PopData &popData) {
+    AssertLockHeld(cs_main);
+    GetPop().getMemPool().removeAll(popData);
+}
+
+int compareForks(const CBlockIndex &leftForkTip,
+                 const CBlockIndex &rightForkTip) {
+    AssertLockHeld(cs_main);
+    auto &pop = GetPop();
+
+    if (&leftForkTip == &rightForkTip) {
+        return 0;
+    }
+
+    auto left = blockToAltBlock(leftForkTip);
+    auto right = blockToAltBlock(rightForkTip);
+    auto state = altintegration::ValidationState();
+
+    if (!pop.getAltBlockTree().setState(left.hash, state)) {
+        assert(false && "current tip is invalid");
+    }
+
+    return pop.getAltBlockTree().comparePopScore(left.hash, right.hash);
+}
+
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height, const CChainParams& params) {
+    if (!params.isPopActive(height)) {
+        return subsidy;
+    }
+
+    int64_t powRewardPercentage = 100 - params.PopRewardPercentage();
+    Amount newSubsidy = powRewardPercentage * subsidy;
+    return newSubsidy / 100;
+}
+
+void addDisconnectedPopdata(const altintegration::PopData &popData) {
+    altintegration::ValidationState state;
+    auto& popmp = VeriBlock::GetPop().getMemPool();
+    for (const auto& i : popData.context) {
+        popmp.submit(i, state);
+    }
+    for (const auto& i : popData.vtbs) {
+        popmp.submit(i, state);
+    }
+    for (const auto& i : popData.atvs) {
+        popmp.submit(i, state);
+    }
 }
 
 bool isPopEnabled()

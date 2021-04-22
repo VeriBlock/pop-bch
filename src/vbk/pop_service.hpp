@@ -12,9 +12,6 @@
 #include "pop_common.hpp"
 #include <vbk/adaptors/payloads_provider.hpp>
 
-/** Amount in satoshis (Can be negative) */
-typedef int64_t CAmount;
-
 class CBlockIndex;
 class CBlock;
 class CScript;
@@ -26,9 +23,9 @@ class BlockValidationState;
 namespace VeriBlock {
 
 using BlockBytes = std::vector<uint8_t>;
-using PoPRewards = std::map<CScript, CAmount>;
+using PoPRewards = std::map<CScript, int64_t>;
 
-void SetPop(CDBWrapper &db);
+void InitPopContext(CDBWrapper& db);
 
 //! returns true if all tips are stored in database, false otherwise
 bool hasPopData(CBlockTreeDB& db);
@@ -37,19 +34,20 @@ void saveTrees(CDBBatch* batch);
 bool loadTrees(CDBWrapper& db);
 
 //! pop rewards
-PoPRewards getPopRewards(const CBlockIndex &pindexPrev)
+PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& params)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
-                                 const CBlockIndex &pindexPrev)
+                                 const CBlockIndex &pindexPrev,
+                                 const CChainParams& params)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
-                                   const CBlockIndex &pindexPrev,
-                                   const Consensus::Params &consensusParams,
+                                   const CBlockIndex &pindex,
+                                   const CChainParams& params,
                                    Amount &blockReward,
                                    BlockValidationState &state)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height);
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height, const CChainParams& params);
 
 //! pop forkresolution
 CBlockIndex *compareTipToBlock(CBlockIndex *candidate)
@@ -68,7 +66,6 @@ bool setState(const BlockHash &hash, altintegration::ValidationState &state)
 //! mempool methods
 void removePayloadsFromMempool(const altintegration::PopData &popData)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-void updatePopMempoolForReorg() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 void addDisconnectedPopdata(const altintegration::PopData &popData)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 

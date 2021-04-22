@@ -60,8 +60,6 @@
 #include <validationinterface.h>
 #include <walletinitinterface.h>
 
-#include <vbk/pop_service.hpp>
-
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -72,6 +70,9 @@
 #include <zmq/zmqnotificationinterface.h>
 #include <zmq/zmqrpc.h>
 #endif
+
+#include <vbk/log.hpp>
+#include <vbk/pop_service.hpp>
 
 #ifndef WIN32
 #include <attributes.h>
@@ -224,6 +225,7 @@ void Shutdown(NodeContext &node) {
     }
     threadGroup.interrupt_all();
     threadGroup.join_all();
+    VeriBlock::StopPop();
 
     // After the threads that potentially access these pointers have been
     // stopped, destruct and reset all to nullptr.
@@ -1541,6 +1543,12 @@ void InitLogging() {
     LogInstance().m_log_threadnames =
         gArgs.GetBoolArg("-logthreadnames", DEFAULT_LOGTHREADNAMES);
 
+    LogInstance().EnableCategory(BCLog::POP);
+
+    std::string poplogverbosity = gArgs.GetArg("-poplogverbosity", "warn");
+    altintegration::SetLogger<VeriBlock::VBCHLogger>();
+    altintegration::GetLogger().level = altintegration::StringToLevel(poplogverbosity);
+
     fLogIPs = gArgs.GetBoolArg("-logips", DEFAULT_LOGIPS);
 
     std::string version_string = FormatFullVersion();
@@ -2414,7 +2422,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                 pblocktree.reset();
                 pblocktree.reset(
                     new CBlockTreeDB(nBlockTreeDBCache, false, fReset));
-                VeriBlock::SetPop(*pblocktree);
+                VeriBlock::InitPopContext(*pblocktree);
 
                 if (fReset) {
                     pblocktree->WriteReindexing(true);
@@ -2806,7 +2814,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
         },
         DUMP_BANS_INTERVAL);
 
-    {
+    if (VeriBlock::isPopEnabled()) {
         auto &pop = VeriBlock::GetPop();
         auto *tip = ChainActive().Tip();
         altintegration::ValidationState state;

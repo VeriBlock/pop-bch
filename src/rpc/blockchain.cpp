@@ -2269,7 +2269,7 @@ static UniValue getblockstats(const Config &config,
     ret_all.pushKV("mintxsize", mintxsize == blockMaxSize ? 0 : mintxsize);
     ret_all.pushKV("outs", outputs);
     ret_all.pushKV("subsidy", ValueFromAmount(GetBlockSubsidy(
-                                  pindex->nHeight, Params().GetConsensus())));
+                                  pindex->nHeight, Params())));
     ret_all.pushKV("time", pindex->GetBlockTime());
     ret_all.pushKV("total_out", ValueFromAmount(total_out));
     ret_all.pushKV("total_size", total_size);

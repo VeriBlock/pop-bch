@@ -21,43 +21,6 @@ extern const std::vector<std::string> testnetVBKblocks;
 extern const int testnetBTCstartHeight;
 extern const std::vector<std::string> testnetBTCblocks;
 
-struct AltChainParamsVBITCASH : public altintegration::AltChainParams {
-    ~AltChainParamsVBITCASH() override = default;
-
-    AltChainParamsVBITCASH(const CBlock &genesis) {
-        auto hash = genesis.GetHash();
-        bootstrap.hash = std::vector<uint8_t>{hash.begin(), hash.end()};
-        bootstrap.height = 0; // pop is enabled starting at genesis
-        bootstrap.timestamp = genesis.GetBlockTime();
-    }
-
-    altintegration::AltBlock getBootstrapBlock() const noexcept override {
-        return bootstrap;
-    }
-
-    int64_t getIdentifier() const noexcept override { return 1; }
-
-    std::vector<uint8_t>
-    getHash(const std::vector<uint8_t> &bytes) const noexcept override;
-
-    // we should verify:
-    // - check that 'bytes' can be deserialized to a CBlockHeader
-    // - check that this CBlockHeader is valid (time, pow, version...)
-    // - check that 'root' is equal to Merkle Root in CBlockHeader
-    bool checkBlockHeader(
-        const std::vector<uint8_t>& bytes,
-        const std::vector<uint8_t>& root, altintegration::ValidationState& state) const noexcept override;
-
-    altintegration::AltBlock bootstrap;
-};
-
-void printConfig(const altintegration::Config &config);
-void selectPopConfig(const ArgsManager &mgr);
-void selectPopConfig(const std::string &btcnet, const std::string &vbknet,
-                     bool popautoconfig = true, int btcstart = 0,
-                     const std::string &btcblocks = {}, int vbkstart = 0,
-                     const std::string &vbkblocks = {});
-
 } // namespace VeriBlock
 
 #endif

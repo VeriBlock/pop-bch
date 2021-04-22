@@ -780,8 +780,8 @@ bool ReadBlockFromDisk(CBlock &block, const CBlockIndex *pindex,
     return true;
 }
 
-Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
-    int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
+Amount GetBlockSubsidy(int nHeight, const CChainParams& params) {
+    int halvings = nHeight / params.GetConsensus().nSubsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
     if (halvings >= 64) {
         return Amount::zero();
@@ -790,7 +790,7 @@ Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
     Amount nSubsidy = 50 * COIN;
     // Subsidy is cut in half every 210,000 blocks which will occur
     // approximately every 4 years.
-    nSubsidy = VeriBlock::getCoinbaseSubsidy(nSubsidy, nHeight);
+    nSubsidy = VeriBlock::getCoinbaseSubsidy(nSubsidy, nHeight, params);
 
     return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
 }
@@ -1835,7 +1835,7 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     Amount blockReward;
     assert(pindex->pprev && "previous block ptr is nullptr");
     if (!VeriBlock::checkCoinbaseTxWithPopRewards(
-            *block.vtx[0], nFees, *pindex->pprev, consensusParams, blockReward,
+            *block.vtx[0], nFees, *pindex, params, blockReward,
             state)) {
         return false;
     }

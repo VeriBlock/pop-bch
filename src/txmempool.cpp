@@ -1385,9 +1385,6 @@ void DisconnectedBlockTransactions::updateMempoolForReorg(const Config &config,
     AssertLockHeld(cs_main);
     std::vector<TxId> txidsUpdate;
 
-    // VeriBlock
-    VeriBlock::updatePopMempoolForReorg();
-
     // disconnectpool's insertion_order index sorts the entries from oldest to
     // newest, but the oldest entry will be the last tx from the latest mined
     // block that was disconnected.

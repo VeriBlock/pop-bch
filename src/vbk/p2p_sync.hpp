@@ -19,99 +19,97 @@ namespace VeriBlock {
 
 namespace p2p {
 
-    struct PopP2PState {
-        uint32_t known_pop_data{0};
-        uint32_t offered_pop_data{0};
-        uint32_t requested_pop_data{0};
-    };
+struct PopP2PState {
+    uint32_t known_pop_data{0};
+    uint32_t offered_pop_data{0};
+    uint32_t requested_pop_data{0};
+};
 
-    // The state of the Node that stores already known Pop Data
-    struct PopDataNodeState {
-        // we use map to store DDoS prevention counter as a value in the map
-        std::map<altintegration::ATV::id_t, PopP2PState> atv_state{};
-        std::map<altintegration::VTB::id_t, PopP2PState> vtb_state{};
-        std::map<altintegration::VbkBlock::id_t, PopP2PState>
-            vbk_blocks_state{};
+// The state of the Node that stores already known Pop Data
+struct PopDataNodeState {
+    // we use map to store DDoS prevention counter as a value in the map
+    std::map<altintegration::ATV::id_t, PopP2PState> atv_state{};
+    std::map<altintegration::VTB::id_t, PopP2PState> vtb_state{};
+    std::map<altintegration::VbkBlock::id_t, PopP2PState> vbk_blocks_state{};
 
-        template <typename T> std::map<typename T::id_t, PopP2PState> &getMap();
-    };
+    template <typename T>
+    std::map<typename T::id_t, PopP2PState>& getMap();
+};
 
-    PopDataNodeState &getPopDataNodeState(const NodeId &id);
+PopDataNodeState& getPopDataNodeState(const NodeId& id);
 
-    void erasePopDataNodeState(const NodeId &id);
+void erasePopDataNodeState(const NodeId& id);
 
 } // namespace p2p
 
 } // namespace VeriBlock
+
 
 namespace VeriBlock {
 
 namespace p2p {
 
-    const static std::string get_prefix = "g";
-    const static std::string offer_prefix = "of";
+const static std::string get_prefix = "g";
+const static std::string offer_prefix = "of";
 
-    const static uint32_t MAX_POP_DATA_SENDING_AMOUNT = MAX_INV_SZ;
-    const static uint32_t MAX_POP_MESSAGE_SENDING_COUNT = 30;
+const static uint32_t MAX_POP_DATA_SENDING_AMOUNT = 100;
+const static uint32_t MAX_POP_MESSAGE_SENDING_COUNT = 30;
 
-    template <typename pop_t> void offerPopDataToAllNodes(const pop_t &p) {
-        std::vector<std::vector<uint8_t>> p_id = {p.getId().asVector()};
-        CConnman *connman = g_rpc_node->connman.get();
-        const CNetMsgMaker msgMaker(PROTOCOL_VERSION);
+template <typename pop_t>
+void offerPopDataToAllNodes(const pop_t& p)
+{
+    std::vector<std::vector<uint8_t>> p_id = {p.getId().asVector()};
+    CConnman* connman = g_rpc_node->connman.get();
+    const CNetMsgMaker msgMaker(PROTOCOL_VERSION);
 
-        connman->ForEachNode([&connman, &msgMaker, &p_id](CNode *node) {
-            LOCK(cs_main);
+    connman->ForEachNode([&connman, &msgMaker, &p_id](CNode* node) {
+        LOCK(cs_main);
 
-            auto &pop_state_map =
-                getPopDataNodeState(node->GetId()).getMap<pop_t>();
-            PopP2PState &pop_state = pop_state_map[p_id[0]];
-            if (pop_state.offered_pop_data == 0) {
-                ++pop_state.offered_pop_data;
-                connman->PushMessage(
-                    node, msgMaker.Make(offer_prefix + pop_t::name(), p_id));
-            }
-        });
-    }
+        auto& pop_state_map = getPopDataNodeState(node->GetId()).getMap<pop_t>();
+        PopP2PState& pop_state = pop_state_map[p_id[0]];
+        if (pop_state.offered_pop_data == 0) {
+            ++pop_state.offered_pop_data;
+            connman->PushMessage(node, msgMaker.Make(offer_prefix + pop_t::name(), p_id));
+        }
+    });
+}
 
-    template <typename PopDataType>
-    void offerPopData(CNode *node, CConnman *connman,
-                      const CNetMsgMaker &msgMaker)
-        EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
-        AssertLockHeld(cs_main);
-        auto &pop_mempool = VeriBlock::GetPop().getMemPool();
-        const auto &data = pop_mempool.getMap<PopDataType>();
 
-        auto &pop_state_map =
-            getPopDataNodeState(node->GetId()).getMap<PopDataType>();
+template <typename PopDataType>
+void offerPopData(CNode* node, CConnman* connman, const CNetMsgMaker& msgMaker) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    auto& pop_state_map = getPopDataNodeState(node->GetId()).getMap<PopDataType>();
+    auto& pop_mempool = VeriBlock::GetPop().getMemPool();
+    std::vector<std::vector<uint8_t>> hashes;
 
-        std::vector<std::vector<uint8_t>> hashes;
-        for (const auto &el : data) {
-            PopP2PState &pop_state = pop_state_map[el.first];
-            if (pop_state.offered_pop_data == 0 &&
-                pop_state.known_pop_data == 0) {
+    auto addhashes = [&](const std::unordered_map<typename PopDataType::id_t, std::shared_ptr<PopDataType>>& map) {
+        for (const auto& el : map) {
+            PopP2PState& pop_state = pop_state_map[el.first];
+            if (pop_state.offered_pop_data == 0 && pop_state.known_pop_data == 0) {
                 ++pop_state.offered_pop_data;
                 hashes.push_back(el.first.asVector());
             }
 
             if (hashes.size() == MAX_POP_DATA_SENDING_AMOUNT) {
-                connman->PushMessage(
-                    node,
-                    msgMaker.Make(offer_prefix + PopDataType::name(), hashes));
+                connman->PushMessage(node, msgMaker.Make(offer_prefix + PopDataType::name(), hashes));
                 hashes.clear();
             }
         }
+    };
 
-        if (!hashes.empty()) {
-            connman->PushMessage(
-                node,
-                msgMaker.Make(offer_prefix + PopDataType::name(), hashes));
-        }
+    addhashes(pop_mempool.getMap<PopDataType>());
+    addhashes(pop_mempool.getInFlightMap<PopDataType>());
+
+    if (!hashes.empty()) {
+        connman->PushMessage(node, msgMaker.Make(offer_prefix + PopDataType::name(), hashes));
     }
+}
 
-    int processPopData(CNode *pfrom, const std::string &strCommand,
-                       CDataStream &vRecv, CConnman *connman);
+int processPopData(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman* connman);
 
 } // namespace p2p
 } // namespace VeriBlock
+
 
 #endif

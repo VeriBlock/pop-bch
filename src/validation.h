@@ -379,7 +379,7 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
 bool ActivateBestChain(
     const Config &config, BlockValidationState &state,
     std::shared_ptr<const CBlock> pblock = std::shared_ptr<const CBlock>());
-Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams);
+Amount GetBlockSubsidy(int nHeight, const CChainParams& params);
 
 /**
  * Guess verification progress (as a fraction between 0.0=genesis and
