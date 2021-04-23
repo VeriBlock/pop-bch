@@ -168,8 +168,8 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     if (chainParams.isPopActive(nHeight)) {
         pblock->popData = VeriBlock::getPopData(*pindexPrev);
     }
-    if (!pblock->popData.atvs.empty() || !pblock->popData.context.empty() ||
-        !pblock->popData.vtbs.empty()) {
+
+    if (!pblock->popData.empty()) {
         pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
     }
 

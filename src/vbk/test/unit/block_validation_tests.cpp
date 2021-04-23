@@ -15,15 +15,12 @@ inline std::vector<uint8_t> operator""_v(const char *s, size_t size) {
 
 BOOST_AUTO_TEST_SUITE(block_validation_tests)
 
-static altintegration::PopData generateRandPopData() {
+static altintegration::PopData generateRandPopData()
+{
     // add PopData
-    auto atvBytes = altintegration::ParseHex(VeriBlockTest::defaultAtvEncoded);
-    auto streamATV = altintegration::ReadStream(atvBytes);
-    auto atv = altintegration::ATV::fromVbkEncoding(streamATV);
+    auto atv = altintegration::AssertDeserializeFromHex<altintegration::ATV>(VeriBlockTest::defaultAtvEncoded);
+    auto vtb = altintegration::AssertDeserializeFromHex<altintegration::VTB>(VeriBlockTest::defaultVtbEncoded);
 
-    auto vtbBytes = altintegration::ParseHex(VeriBlockTest::defaultVtbEncoded);
-    auto streamVTB = altintegration::ReadStream(vtbBytes);
-    auto vtb = altintegration::VTB::fromVbkEncoding(streamVTB);
 
     altintegration::PopData popData;
     popData.atvs = {atv};

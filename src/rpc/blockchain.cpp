@@ -1272,6 +1272,24 @@ static UniValue verifychain(const Config &config,
                                 nCheckDepth);
 }
 
+static void BuriedForkDescPushBack(UniValue& softforks, const std::string &name, int height) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    // For buried deployments.
+    // A buried deployment is one where the height of the activation has been hardcoded into
+    // the client implementation long after the consensus change has activated. See BIP 90.
+    // Buried deployments with activation height value of
+    // std::numeric_limits<int>::max() are disabled and thus hidden.
+    if (height == std::numeric_limits<int>::max()) return;
+
+    UniValue rv(UniValue::VOBJ);
+    rv.pushKV("type", "buried");
+    // getblockchaininfo reports the softfork as active from when the chain height is
+    // one below the activation height
+    rv.pushKV("active", ::ChainActive().Tip()->nHeight + 1 >= height);
+    rv.pushKV("height", height);
+    softforks.pushKV(name, rv);
+}
+
 static void BIP9SoftForkDescPushBack(UniValue &softforks,
                                      const Consensus::Params &consensusParams,
                                      Consensus::DeploymentPos id)
@@ -1456,6 +1474,8 @@ UniValue getblockchaininfo(const Config &config,
     }
 
     UniValue softforks(UniValue::VOBJ);
+    //VeriBlock
+    BuriedForkDescPushBack(softforks, "pop_security", chainparams.GetConsensus().VeriBlockPopSecurityHeight);
     for (int i = 0; i < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; i++) {
         BIP9SoftForkDescPushBack(softforks, chainparams.GetConsensus(),
                                  Consensus::DeploymentPos(i));

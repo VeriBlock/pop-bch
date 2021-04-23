@@ -962,8 +962,14 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex,
                                     const BlockValidationState &state) {
     if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
         pindex->nStatus = pindex->nStatus.withFailed();
+        if (VeriBlock::isPopEnabled()) {
+            VeriBlock::GetPop()
+                    .getAltBlockTree()
+                    .invalidateSubtree(pindex->GetBlockHash().asVector(), altintegration::BLOCK_FAILED_BLOCK);
+        }
         m_failed_blocks.insert(pindex);
         setDirtyBlockIndex.insert(pindex);
+        setBlockIndexCandidates.erase(pindex);
         InvalidChainFound(pindex);
     }
 }
@@ -1338,9 +1344,11 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         }
     }
 
-    altintegration::ValidationState state;
     AssertLockHeld(cs_main);
-    VeriBlock::setState(block.hashPrevBlock, state);
+    if (VeriBlock::isPopEnabled()) {
+        altintegration::ValidationState state;
+        VeriBlock::setState(block.hashPrevBlock, state);
+    }
 
     // Move best block pointer to previous block.
     view.SetBestBlock(block.hashPrevBlock);
@@ -1812,15 +1820,6 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
         txIndex++;
     }
 
-    altintegration::ValidationState _state;
-    if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
-                             REJECT_INVALID, "bad-block-pop",
-                             strprintf("Block %s is POP invalid: %s",
-                                       pindex->GetBlockHash().ToString(),
-                                       _state.toString()));
-    }
-
     int64_t nTime3 = GetTimeMicros();
     nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH,
@@ -1832,12 +1831,21 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
              nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
     // VeriBlock add pop rewards validation
-    Amount blockReward;
-    assert(pindex->pprev && "previous block ptr is nullptr");
-    if (!VeriBlock::checkCoinbaseTxWithPopRewards(
-            *block.vtx[0], nFees, *pindex, params, blockReward,
-            state)) {
-        return false;
+    Amount blockReward = GetBlockSubsidy(pindex->pprev->nHeight, params);
+    blockReward += nFees;
+
+    if (VeriBlock::isPopEnabled()) {
+        assert(pindex->pprev && "previous block ptr is nullptr");
+        if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, blockReward, state)) {
+            return false;
+        }
+
+        altintegration::ValidationState _state;
+        if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID, "bad-block-pop",
+                                 strprintf("Block %s is POP invalid: %s", pindex->GetBlockHash().ToString(),
+                                           _state.toString()));
+        }
     }
 
     const std::vector<CTxDestination> whitelist =
@@ -3257,8 +3265,11 @@ bool CChainState::UnwindBlock(const Config &config, BlockValidationState &state,
              mapBlockIndex) {
             CBlockIndex *i = it.second;
             if (i->IsValid(BlockValidity::TRANSACTIONS) &&
-                i->HaveTxsDownloaded() &&
-                !setBlockIndexCandidates.value_comp()(i, m_chain.Tip())) {
+                i->HaveTxsDownloaded()
+                // VeriBlock: setBlockIndexCandidates now stores all tips
+                //&& !setBlockIndexCandidates.value_comp()(i, m_chain.Tip())
+               )
+            {
                 setBlockIndexCandidates.insert(i);
             }
         }
@@ -3267,6 +3278,8 @@ bool CChainState::UnwindBlock(const Config &config, BlockValidationState &state,
             InvalidChainFound(to_mark_failed_or_parked);
         }
     }
+
+    PruneBlockIndexCandidates();
 
     // Only notify about a new block tip if the active chain was modified.
     if (pindex_was_in_chain) {
@@ -3403,6 +3416,13 @@ void CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
         pindexFinalized = LastCommonAncestor(pindex, pindexFinalized);
     }
 
+    if (VeriBlock::isPopEnabled()) {
+        auto blockHash = pindex->GetBlockHash().asVector();
+        VeriBlock::GetPop().getAltBlockTree().revalidateSubtree(blockHash, altintegration::BLOCK_FAILED_BLOCK, false);
+    }
+
+    PruneBlockIndexCandidates();
+
     UpdateFlags(
         pindex, pindexBestInvalid,
         [](const BlockStatus status) {
@@ -3490,8 +3510,11 @@ CBlockIndex *CChainState::AddToBlockIndex(const CBlockHeader &block) {
         (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) +
         GetBlockProof(*pindexNew);
     pindexNew->RaiseValidity(BlockValidity::TREE);
-    if (pindexBestHeader == nullptr ||
-        pindexBestHeader->nChainWork < pindexNew->nChainWork) {
+
+    // VeriBlock: if pindexNew is a successor of pindexBestHeader, and pindexNew has higher chainwork, then update pindexBestHeader
+    if (pindexBestHeader == nullptr || ((pindexBestHeader->nChainWork < pindexNew->nChainWork) &&
+                                           (pindexNew->GetAncestor(pindexBestHeader->nHeight) == pindexBestHeader)))
+    {
         pindexBestHeader = pindexNew;
     }
 
@@ -4218,9 +4241,10 @@ bool CChainState::AcceptBlock(const Config &config,
                   pindex->GetBlockHash().ToString(), newBlockTimeDiff);
     }
 
-    bool fHasMoreOrSameWork =
-        (m_chain.Tip() ? pindex->nChainWork >= m_chain.Tip()->nChainWork
-                       : true);
+    //VeriBlock: unused
+    //bool fHasMoreOrSameWork =
+    //    (m_chain.Tip() ? pindex->nChainWork >= m_chain.Tip()->nChainWork
+    //                   : true);
 
     // Blocks that are too out-of-order needlessly limit the effectiveness of
     // pruning, because pruning will not delete block files that contain any
@@ -4244,9 +4268,10 @@ bool CChainState::AcceptBlock(const Config &config,
         }
 
         // Don't process less-work chains.
-        if (!fHasMoreOrSameWork) {
-            return true;
-        }
+        // VeriBlock: process all chains
+        //if (!fHasMoreOrSameWork) {
+        //    return true;
+        //}
 
         // Block height is too high.
         if (fTooFarAhead) {
@@ -4421,23 +4446,20 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
     // in alt tree, because technically it was not created ("mined"). in this
     // case, add it and then remove
     auto &tree = VeriBlock::GetPop().getAltBlockTree();
-    std::vector<uint8_t> _hash{block_hash.begin(), block_hash.end()};
+    auto _hash = block_hash.asVector();
     bool shouldRemove = false;
-    if (!tree.getBlockIndex(_hash)) {
-        shouldRemove = true;
-        auto containing = VeriBlock::blockToAltBlock(indexDummy);
-        altintegration::ValidationState _state;
-        bool ret = tree.acceptBlockHeader(containing, _state);
-        assert(ret && "alt tree can not accept alt block");
 
-        tree.acceptBlock(_hash, block.popData);
-    }
+    if (VeriBlock::isPopEnabled()) {
+        if (!tree.getBlockIndex(_hash)) {
+            shouldRemove = true;
+            auto containing = VeriBlock::blockToAltBlock(indexDummy);
+            altintegration::ValidationState _state;
+            bool ret = tree.acceptBlockHeader(containing, _state);
+            assert(ret && "alt tree can not accept alt block");
 
-    auto _f = altintegration::Finalizer([shouldRemove, _hash, &tree]() {
-        if (shouldRemove) {
-            tree.removeSubtree(_hash);
+            tree.acceptBlock(_hash, block.popData);
         }
-    });
+    }
 
     if (!::ChainstateActive().ConnectBlock(block, state, &indexDummy, viewNew,
                                            params, validationOptions, true)) {
@@ -4445,6 +4467,13 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
     }
 
     assert(state.IsValid());
+
+    if (VeriBlock::isPopEnabled()) {
+        if (shouldRemove) {
+            tree.removeSubtree(_hash);
+        }
+    }
+
     return true;
 }
 

@@ -46,6 +46,9 @@ inline CBlockHeader headerFromBytes(const std::vector<uint8_t> &v) {
     CDataStream stream(v, SER_NETWORK, PROTOCOL_VERSION);
     CBlockHeader header;
     stream >> header;
+    if(!stream.eof()) {
+        throw std::runtime_error("stream is not empty");
+    }
     return header;
 }
 
@@ -54,11 +57,15 @@ inline altintegration::AltBlock blockToAltBlock(int nHeight,
     altintegration::AltBlock alt;
     alt.height = nHeight;
     alt.timestamp = block.nTime;
-    alt.previousBlock = std::vector<uint8_t>(block.hashPrevBlock.begin(),
-                                             block.hashPrevBlock.end());
-    auto hash = block.GetHash();
-    alt.hash = std::vector<uint8_t>(hash.begin(), hash.end());
+    alt.previousBlock = block.hashPrevBlock.asVector();
+    alt.hash =block.GetHash().asVector();
     return alt;
+}
+
+//PopData weight
+inline int64_t GetPopDataWeight(const altintegration::PopData& pop_data)
+{
+    return ::GetSerializeSize(pop_data, PROTOCOL_VERSION);
 }
 
 inline altintegration::AltBlock blockToAltBlock(const CBlockIndex &index) {
