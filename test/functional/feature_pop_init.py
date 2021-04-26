@@ -14,7 +14,7 @@ Node[2] is a control node.
 Expect that BTC/VBK tree state on nodes[0,1] is same as before shutdown (test against control node).
 """
 
-from test_framework.pop import create_endorsed_chain
+from test_framework.pop import create_endorsed_chain, mine_until_pop_enabled
 from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -32,17 +32,18 @@ class PopInit(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
         # nodes[0,1] will be restarted
         # node[2] is a control node
 
         # all nodes connected and synced
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
-            self.sync_all()
+        self.sync_all()
 
     def get_best_block(self, node):
         hash = node.getbestblockhash()
@@ -68,7 +69,7 @@ class PopInit(BitcoinTestFramework):
         self.log.info("nodes are in sync")
 
         bestblocks = [self.get_best_block(x) for x in self.nodes]
-        popdata = [x.getpopdata(bestblocks[0]['height']) for x in self.nodes]
+        popdata = [x.getpopdatabyheight(bestblocks[0]['height']) for x in self.nodes]
 
         # when node0 stops, its VBK/BTC trees get cleared. When we start it again, it MUST load payloads into trees.
         # if this assert fails, it means that node restarted, but NOT loaded its VBK/BTC state into memory.
@@ -84,7 +85,7 @@ class PopInit(BitcoinTestFramework):
         self.sync_all(self.nodes)
         self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self._restart_init_test()

@@ -7,6 +7,7 @@
 import struct
 import time
 from typing import Optional
+import logging
 
 from .messages import ser_uint256, hash256, uint256_from_str
 from .pop_const import KEYSTONE_INTERVAL, NETWORK_ID
@@ -69,8 +70,8 @@ def create_endorsed_chain(node, apm, size: int, addr: str) -> None:
     node.waitforblockheight(initial_height + size)
 
 
-def endorse_block(node, apm, height: int, addr: str, vtbs: Optional[int] = None) -> str:
-    from pypopminer import PublicationData
+def endorse_block(node, apm, height: int, addr: str) -> str:
+    from pypoptools.pypopminer import PublicationData
 
     # get pubkey for that address
     pubkey = node.getaddressinfo(addr)['pubkey']
@@ -78,21 +79,27 @@ def endorse_block(node, apm, height: int, addr: str, vtbs: Optional[int] = None)
     script = CScript([OP_DUP, OP_HASH160, pkh, OP_EQUALVERIFY, OP_CHECKSIG])
     payoutInfo = script.hex()
 
-    popdata = node.getpopdata(height)
-    last_btc = popdata['last_known_bitcoin_blocks'][0]
-    last_vbk = popdata['last_known_veriblock_blocks'][0]
+    popdata = node.getpopdatabyheight(height)
+    authctx = popdata['authenticated_context']['serialized']
+    last_vbk = popdata['last_known_veriblock_blocks'][-1]
     header = popdata['block_header']
+
     pub = PublicationData()
     pub.header = header
     pub.payoutInfo = payoutInfo
     pub.identifier = NETWORK_ID
-
-    if vtbs:
-        apm.endorseVbkBlock(last_vbk, last_btc, vtbs)
+    pub.contextInfo = authctx
 
     payloads = apm.endorseAltBlock(pub, last_vbk)
-    node.submitpop(*payloads.prepare())
-    return payloads.atv.getId()
+
+    for vbk_block in payloads.context:
+        node.submitpopvbk(vbk_block.toVbkEncodingHex())
+    for vtb in payloads.vtbs:
+        node.submitpopvtb(vtb.toVbkEncodingHex())
+    for atv in payloads.atvs:
+        node.submitpopatv(atv.toVbkEncodingHex())
+
+    return payloads.atvs[0].getId()
 
 
 def mine_vbk_blocks(node, apm, amount: int) -> str:
@@ -100,8 +107,7 @@ def mine_vbk_blocks(node, apm, amount: int) -> str:
     for i in range(amount):
         vbks.append(apm.mineVbkBlocks(1))
 
-    result = node.submitpop([b.toVbkEncodingHex() for b in vbks], [], [])
-    return result['vbkblocks']
+    return [node.submitpopvbk(b.toVbkEncodingHex()) for b in vbks]
 
 
 class ContextInfoContainer:
@@ -231,3 +237,14 @@ def sync_pop_mempools(rpc_connections, *, wait=1, timeout=60, flush_scheduler=Tr
         "".join("\n  {!r}".format(m) for m in vtbs),
         "".join("\n  {!r}".format(m) for m in vbkblocks)
     ))
+
+
+def mine_until_pop_enabled(node):
+    existing = node.getblockcount()
+    activate = node.getblockchaininfo()['softforks']['pop_security']['height']
+    assert activate >= 0, "POP security should be able to activate"
+    if existing < activate:
+        assert activate - existing < 1000, "POP security activates on height {}. Will take too long to activate".format(
+            activate)
+        node.generate(nblocks=(activate - existing))
+        node.waitforblockheight(activate)
