@@ -45,8 +45,13 @@ class ConfArgsTest(BitcoinTestFramework):
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('regtest=0\n')  # mainnet
             conf.write('acceptnonstdtxn=1\n')
+        #self.nodes[0].assert_start_raises_init_error(
+        #    expected_msg='Error: acceptnonstdtxn is not currently supported for main chain')
+        # VeriBlock: POP implementation does not support mainnet hence we cannot properly
+        # check for the error above.
+        # TODO: Revert this check when mainnet is supported.
         self.nodes[0].assert_start_raises_init_error(
-            expected_msg='Error: acceptnonstdtxn is not currently supported for main chain')
+            expected_msg='Error: currently only supports test/regtest')
 
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('nono\n')

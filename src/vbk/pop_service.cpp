@@ -332,9 +332,10 @@ Amount getCoinbaseSubsidy(Amount subsidy, int32_t height, const CChainParams& pa
         return subsidy;
     }
 
-    int64_t powRewardPercentage = 100 - params.PopRewardPercentage();
-    Amount newSubsidy = powRewardPercentage * subsidy;
-    return newSubsidy / 100;
+    //int64_t powRewardPercentage = 100 - params.PopRewardPercentage();
+    //Amount newSubsidy = powRewardPercentage * subsidy;
+    //return newSubsidy / 100;
+    return subsidy;
 }
 
 void addDisconnectedPopdata(const altintegration::PopData &popData) {

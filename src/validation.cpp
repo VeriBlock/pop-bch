@@ -3365,9 +3365,11 @@ bool CChainState::UpdateFlagsForBlock(CBlockIndex *pindexBase,
         }
 
         if (pindex->IsValid(BlockValidity::TRANSACTIONS) &&
-            pindex->HaveTxsDownloaded() &&
-            setBlockIndexCandidates.value_comp()(::ChainActive().Tip(),
-                                                 pindex)) {
+            pindex->HaveTxsDownloaded()
+            // VeriBlock: setBlockIndexCandidates now stores all tips
+            //&& setBlockIndexCandidates.value_comp()(::ChainActive().Tip(),
+            //                                     pindex)
+        ) {
             setBlockIndexCandidates.insert(pindex);
         }
         return true;
@@ -3420,8 +3422,6 @@ void CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
         auto blockHash = pindex->GetBlockHash().asVector();
         VeriBlock::GetPop().getAltBlockTree().revalidateSubtree(blockHash, altintegration::BLOCK_FAILED_BLOCK, false);
     }
-
-    PruneBlockIndexCandidates();
 
     UpdateFlags(
         pindex, pindexBestInvalid,

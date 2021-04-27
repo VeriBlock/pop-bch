@@ -21,7 +21,7 @@ node[3] started with 0 blocks.
 After sync has been completed, expect all nodes to be on same height (fork A, block 123)
 """
 
-from test_framework.pop import endorse_block, create_endorsed_chain
+from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_enabled
 from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -39,15 +39,16 @@ class PopFr(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
 
         # all nodes connected and synced
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
-            self.sync_all()
+        self.sync_all()
 
     def get_best_block(self, node):
         hash = node.getbestblockhash()
@@ -55,6 +56,7 @@ class PopFr(BitcoinTestFramework):
 
     def _shorter_endorsed_chain_wins(self):
         self.log.warning("starting _shorter_endorsed_chain_wins()")
+        lastblock = self.nodes[3].getblockcount()
 
         # stop node3
         self.stop_node(3)
@@ -64,10 +66,10 @@ class PopFr(BitcoinTestFramework):
         self.nodes[0].generate(nblocks=103)
         self.log.info("node0 mined 103 blocks")
         self.sync_blocks([self.nodes[0], self.nodes[1], self.nodes[2]], timeout=20)
-        assert self.get_best_block(self.nodes[0])['height'] == POP_SECURITY_FORK_POINT + 103
-        assert self.get_best_block(self.nodes[1])['height'] == POP_SECURITY_FORK_POINT + 103
-        assert self.get_best_block(self.nodes[2])['height'] == POP_SECURITY_FORK_POINT + 103
-        self.log.info("nodes[0,1,2] synced are at block {}".format(POP_SECURITY_FORK_POINT + 103))
+        assert self.get_best_block(self.nodes[0])['height'] == lastblock + 103
+        assert self.get_best_block(self.nodes[1])['height'] == lastblock + 103
+        assert self.get_best_block(self.nodes[2])['height'] == lastblock + 103
+        self.log.info("nodes[0,1,2] are synced at block {}".format(lastblock + 103))
 
         # node2 is disconnected from others
         disconnect_nodes(self.nodes[2], self.nodes[0])
@@ -79,8 +81,8 @@ class PopFr(BitcoinTestFramework):
 
         # fork A is at 103
         # fork B is at 200
-        self.nodes[2].waitforblockheight(POP_SECURITY_FORK_POINT + 200)
-        self.log.info("node2 mined 97 more blocks, total height is {}".format(POP_SECURITY_FORK_POINT + 200))
+        self.nodes[2].waitforblockheight(lastblock + 200)
+        self.log.info("node2 mined 97 more blocks, total height is {}".format(lastblock + 200))
 
         bestblocks = [self.get_best_block(x) for x in self.nodes[0:3]]
 
@@ -91,16 +93,16 @@ class PopFr(BitcoinTestFramework):
         # mine 10 more blocks to fork A
         self.nodes[0].generate(nblocks=10)
         self.sync_all(self.nodes[0:2])
-        self.log.info("nodes[0,1] are in sync and are at fork A (103...113 blocks)")
+        self.log.info("nodes[0,1] are in sync and are at fork A (%d...%d blocks)", lastblock + 103, lastblock + 113)
 
-        # fork B is at POP_SECURITY_FORK_POINT + 200
-        assert bestblocks[2]['height'] == POP_SECURITY_FORK_POINT + 200, "unexpected tip: {}".format(bestblocks[2])
-        self.log.info("node2 is at fork B (103...200 blocks)")
+        # fork B is at 400
+        assert bestblocks[2]['height'] == lastblock + 200, "unexpected tip: {}".format(bestblocks[2])
+        self.log.info("node2 is at fork B (%d...%d blocks)", lastblock + 103, lastblock + 200)
 
-        # endorse block 113 (fork A tip)
+        # endorse block 313 (fork A tip)
         addr0 = self.nodes[0].getnewaddress()
-        txid = endorse_block(self.nodes[0], self.apm, POP_SECURITY_FORK_POINT + 113, addr0)
-        self.log.info("node0 endorsed block {} (fork A tip)".format(POP_SECURITY_FORK_POINT + 113))
+        txid = endorse_block(self.nodes[0], self.apm, lastblock + 113, addr0)
+        self.log.info("node0 endorsed block {} (fork A tip)".format(lastblock + 113))
         # mine pop tx on node0
         containinghash = self.nodes[0].generate(nblocks=10)
         self.log.info("node0 mines 10 more blocks")
@@ -110,7 +112,7 @@ class PopFr(BitcoinTestFramework):
         assert_equal(self.nodes[1].getblock(containinghash[0])['hash'], containingblock['hash'])
 
         tip = self.get_best_block(self.nodes[0])
-        assert txid in containingblock['pop']['data']['atvs'], "pop tx is not in containing block"
+        assert txid in containingblock['pop']['state']['stored']['atvs'], "pop tx is not in containing block"
         self.sync_blocks(self.nodes[0:2])
         self.log.info("nodes[0,1] are in sync, pop tx containing block is {}".format(containingblock['height']))
         self.log.info("node0 tip is {}".format(tip['height']))
@@ -157,6 +159,7 @@ class PopFr(BitcoinTestFramework):
                 disconnect_nodes(node, self.nodes[i])
 
         self.log.info("all nodes disconnected")
+        lastblock = self.nodes[3].getblockcount()
 
         # node[i] creates endorsed chain
         toMine = 15
@@ -168,7 +171,7 @@ class PopFr(BitcoinTestFramework):
         # all nodes have different tips at height 223
         bestblocks = [self.get_best_block(x) for x in self.nodes]
         for b in bestblocks:
-            assert b['height'] == POP_SECURITY_FORK_POINT + 123 + toMine
+            assert b['height'] == lastblock + toMine
         assert len(set([x['hash'] for x in bestblocks])) == len(bestblocks)
         self.log.info("all nodes have different tips")
 
@@ -193,10 +196,9 @@ class PopFr(BitcoinTestFramework):
     def run_test(self):
         """Main test logic"""
 
-        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
         self.sync_all(self.nodes[0:4])
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self._shorter_endorsed_chain_wins()
