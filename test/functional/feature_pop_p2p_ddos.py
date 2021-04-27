@@ -4,7 +4,7 @@
 # https://www.veriblock.org
 # Distributed under the MIT software license, see the accompanying
 # file LICENSE or http://www.opensource.org/licenses/mit-license.php.
-from test_framework.pop import endorse_block
+from test_framework.pop import endorse_block, mine_until_pop_enabled
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -34,10 +34,11 @@ class PopP2P(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
         self.sync_all(self.nodes)
 
     def _run_case(self, msg_func, i):
@@ -47,8 +48,9 @@ class PopP2P(BitcoinTestFramework):
 
         # endorse block 5
         addr = self.nodes[0].getnewaddress()
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
         self.log.info("endorsing block 5 on node0 by miner {}".format(addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, 5, addr)
+        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
 
         assert len(self.nodes[0].getpeerinfo()) == 1
         peerinfo = self.nodes[0].getpeerinfo()[0]

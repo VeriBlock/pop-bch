@@ -10,7 +10,7 @@ from test_framework.mininode import (
     P2PInterface,
     msg_get_atv,
 )
-from test_framework.pop import endorse_block
+from test_framework.pop import endorse_block, mine_until_pop_enabled
 from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -80,20 +80,22 @@ class PopP2P(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
 
+        mine_until_pop_enabled(self.nodes[0])
         self.sync_all(self.nodes)
 
     def _run_sync_case(self):
         self.log.info("running _run_sync_case")
 
-        # endorse block 5
+        # endorse block top - 5
         addr = self.nodes[0].getnewaddress()
-        self.log.info("endorsing block {} on node0 by miner {}".format(POP_SECURITY_FORK_POINT + 5, addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, POP_SECURITY_FORK_POINT + 5, addr)
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
+        self.log.info("endorsing block {} on node0 by miner {}".format(tipheight - 5, addr))
+        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
 
         bn = BaseNode(self.log)
 
@@ -124,8 +126,9 @@ class PopP2P(BitcoinTestFramework):
 
         # endorse block 5
         addr = self.nodes[0].getnewaddress()
-        self.log.info("endorsing block {} on node0 by miner {}".format(POP_SECURITY_FORK_POINT + 5, addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, POP_SECURITY_FORK_POINT + 5, addr)
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
+        self.log.info("endorsing block {} on node0 by miner {}".format(tipheight - 5, addr))
+        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
 
         msg = msg_get_atv([atv_id])
         self.nodes[0].p2p.send_message(msg)
@@ -141,10 +144,10 @@ class PopP2P(BitcoinTestFramework):
     def run_test(self):
         """Main test logic"""
 
-        self.nodes[0].generate(nblocks= POP_SECURITY_FORK_POINT + 10)
+        self.nodes[0].generate(nblocks=10)
         self.sync_all(self.nodes)
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self._run_sync_case()
