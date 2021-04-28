@@ -74,6 +74,12 @@ def ripemd160(s):
 def hash256(s):
     return sha256(sha256(s))
 
+def hash256lr(left, right):
+    data = b''
+    data += left
+    data += right
+    return hash256(data)
+
 
 def ser_compact_size(size):
     r = b""

@@ -11,7 +11,6 @@ from test_framework.mininode import (
     msg_get_atv,
 )
 from test_framework.pop import endorse_block, mine_until_pop_enabled
-from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes, assert_equal,

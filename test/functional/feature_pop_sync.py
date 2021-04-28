@@ -9,8 +9,7 @@
 Test with multiple nodes, and multiple PoP endorsements, checking to make sure nodes stay in sync.
 """
 
-from test_framework.pop import KEYSTONE_INTERVAL, endorse_block, sync_pop_mempools
-from test_framework.pop_const import POP_SECURITY_FORK_POINT
+from test_framework.pop import KEYSTONE_INTERVAL, endorse_block, sync_pop_mempools, mine_until_pop_enabled
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -26,23 +25,25 @@ class PoPSync(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
-            self.sync_all()
+        self.sync_all()
 
     def _check_pop_sync(self):
         self.log.info("running _check_pop_sync()")
-        height = POP_SECURITY_FORK_POINT + 1
+        height = self.nodes[0].getblockcount()
         addr0 = self.nodes[0].getnewaddress()
         addr1 = self.nodes[1].getnewaddress()
         addr2 = self.nodes[2].getnewaddress()
+        heightlast = height + 52
 
-        while height < POP_SECURITY_FORK_POINT + 52:
+        while height < heightlast:
             self.nodes[0].generate(nblocks=1)
             # endorse every block
             self.nodes[2].waitforblockheight(height)
@@ -83,7 +84,7 @@ class PoPSync(BitcoinTestFramework):
 
     def assert_atvs_in_node(self, node, containingblockhash, expected):
         block = node.getblock(containingblockhash)
-        atvs = block['pop']['data']['atvs']
+        atvs = block['pop']['state']['stored']['atvs']
         for atv in expected:
             assert atv in atvs, "containing block {} does not contain ATV {}".format(containingblockhash, atv)
 
@@ -91,9 +92,8 @@ class PoPSync(BitcoinTestFramework):
         """Main test logic"""
 
         self.sync_all(self.nodes)
-        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self._check_pop_sync()

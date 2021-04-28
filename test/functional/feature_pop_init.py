@@ -15,7 +15,6 @@ Expect that BTC/VBK tree state on nodes[0,1] is same as before shutdown (test ag
 """
 
 from test_framework.pop import create_endorsed_chain, mine_until_pop_enabled
-from test_framework.pop_const import POP_SECURITY_FORK_POINT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -83,7 +82,6 @@ class PopInit(BitcoinTestFramework):
         """Main test logic"""
 
         self.sync_all(self.nodes)
-        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
 
         from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()

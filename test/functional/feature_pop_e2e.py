@@ -15,7 +15,7 @@ from test_framework.pop import mine_until_pop_enabled
 from test_framework.util import (
     connect_nodes,
 )
-from test_framework.pop_const import NETWORK_ID, POP_SECURITY_FORK_POINT
+from test_framework.pop_const import NETWORK_ID
 
 import time
 

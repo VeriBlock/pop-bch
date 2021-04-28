@@ -79,8 +79,9 @@ class PopP2P(BitcoinTestFramework):
 
         # endorse block 5
         addr = self.nodes[0].getnewaddress()
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
         self.log.info("endorsing block 5 on node0 by miner {}".format(addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, 5, addr)
+        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
         raw_atv = self.nodes[0].getrawatv(atv_id)
 
         assert len(self.nodes[0].getpeerinfo()) == 1
@@ -110,8 +111,9 @@ class PopP2P(BitcoinTestFramework):
 
         # endorse block 5
         addr = self.nodes[0].getnewaddress()
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
         self.log.info("endorsing block 5 on node0 by miner {}".format(addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, 5, addr)
+        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
         raw_atv = self.nodes[0].getrawatv(atv_id)
 
         assert len(self.nodes[0].getpeerinfo()) == 1
@@ -137,7 +139,7 @@ class PopP2P(BitcoinTestFramework):
         self.nodes[0].generate(nblocks=10)
         self.sync_all(self.nodes)
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self.cases = [msg_offer_atv, msg_get_atv]
