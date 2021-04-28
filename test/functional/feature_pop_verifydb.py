@@ -8,8 +8,7 @@
 import time
 
 from test_framework.pop import KEYSTONE_INTERVAL, endorse_block, sync_pop_mempools, create_endorsed_chain, \
-    assert_pop_state_equal
-from test_framework.pop_const import POP_SECURITY_FORK_POINT
+    assert_pop_state_equal, mine_until_pop_enabled
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -34,22 +33,21 @@ class PoPVerifyDB(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
-            self.sync_all()
+        self.sync_all()
 
     def run_test(self):
         """Main test logic"""
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
-        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT)
-        self.sync_all()
         self.addrs = [x.getnewaddress() for x in self.nodes]
         self.endorsed_length = 100
 

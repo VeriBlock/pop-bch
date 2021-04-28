@@ -17,8 +17,8 @@ Expected balance is POW_PAYOUT * 10 + pop payout. (node0 has only 10 mature coin
 
 """
 
-from test_framework.pop import endorse_block
-from test_framework.pop_const import POW_PAYOUT, POP_PAYOUT_DELAY, POP_SECURITY_FORK_POINT
+from test_framework.pop import endorse_block, mine_until_pop_enabled
+from test_framework.pop_const import POW_PAYOUT, POP_PAYOUT_DELAY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -33,10 +33,11 @@ class PopPayouts(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_pypopminer()
+        self.skip_if_no_pypoptools()
 
     def setup_network(self):
         self.setup_nodes()
+        mine_until_pop_enabled(self.nodes[0])
 
         connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_all(self.nodes)
@@ -46,8 +47,18 @@ class PopPayouts(BitcoinTestFramework):
 
         # endorse block 5
         addr = self.nodes[0].getnewaddress()
-        self.log.info("endorsing block {} on node0 by miner {}".format(POP_SECURITY_FORK_POINT + 5, addr))
-        atv_id = endorse_block(self.nodes[0], self.apm, POP_SECURITY_FORK_POINT + 5, addr)
+        lastblock = self.nodes[0].getblockcount()
+        self.nodes[0].generate(nblocks=10)
+        self.nodes[0].waitforblockheight(lastblock + 10)
+        lastblock = self.nodes[0].getblockcount()
+        self.log.info("node0 mined 10 more blocks")
+
+        # endorse block 5
+        assert lastblock >= 5
+        addr = self.nodes[0].getnewaddress()
+        self.endorsed_height = lastblock - 5
+        self.log.info("endorsing block {} on node0 by miner {}".format(self.endorsed_height, addr))
+        atv_id = endorse_block(self.nodes[0], self.apm, self.endorsed_height, addr)
 
         # wait until node[1] gets relayed pop tx
         self.sync_pop_mempools(self.nodes)
@@ -63,10 +74,15 @@ class PopPayouts(BitcoinTestFramework):
         # assert that txid exists in this block
         block = self.nodes[0].getblock(containingblockhash)
 
-        assert atv_id in block['pop']['data']['atvs']
+        assert atv_id in block['pop']['state']['stored']['atvs']
 
-        # target height is 5 + POP_PAYOUT_DELAY + 1
-        n = POP_SECURITY_FORK_POINT + POP_PAYOUT_DELAY + 6 - block['height']
+        # target height is lastblock - 5 + POP_PAYOUT_DELAY
+        self.target_payout_block = self.endorsed_height + POP_PAYOUT_DELAY
+        n = self.target_payout_block - block['height']
+        self.log.info("endorsed block height {}, expected payout block height {}".format(
+            self.endorsed_height,
+            self.target_payout_block
+        ))
         payoutblockhash = self.nodes[1].generate(nblocks=n)[-1]
         self.sync_blocks(self.nodes)
         self.log.info("pop rewards paid")
@@ -76,19 +92,18 @@ class PopPayouts(BitcoinTestFramework):
         coinbasetxhash = block['tx'][0]
         coinbasetx = self.nodes[0].getrawtransaction(coinbasetxhash, 1)
         outputs = coinbasetx['vout']
-        assert len(outputs) > 2, "block with payout does not contain pop payout: {}".format(outputs)
+        assert len(outputs) > 1, "block with payout does not contain pop payout: {}".format(outputs)
         assert outputs[1]['n'] == 1
         assert outputs[1]['value'] > 0, "expected non-zero output at n=1, got: {}".format(outputs[1])
-        
+
         self.log.warning("success! _case1_endorse_keystone_get_paid()")
 
     def run_test(self):
         """Main test logic"""
 
-        self.nodes[0].generate(nblocks=POP_SECURITY_FORK_POINT + 10)
         self.sync_all(self.nodes)
 
-        from pypopminer import MockMiner
+        from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
         self._case1_endorse_keystone_get_paid()
