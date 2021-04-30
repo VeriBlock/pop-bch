@@ -371,6 +371,11 @@ void SetupServerArgs() {
         // TODO remove after the November 2020 upgrade
         "-axionactivationtime"};
 
+    // VBK
+    gArgs.AddArg("-bfiendpoint", "Default end point for BFI setup.", ArgsManager::ALLOW_STRING, OptionsCategory::OPTIONS);
+    gArgs.AddArg("-poplogverbosity", "Verbosity for alt-cpp lib: debug/info/(warn)/error/off", ArgsManager::ALLOW_STRING, OptionsCategory::OPTIONS);
+    // VBK
+
     // Set all of the args and their help
     // When adding new options to the categories, please keep and ensure
     // alphabetical ordering. Do not translate _(...) -help-debug options, Many

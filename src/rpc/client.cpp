@@ -23,6 +23,14 @@ public:
  * @note Parameter indexes start from 0.
  */
 static const CRPCConvertParam vRPCConvertParams[] = {
+    // VeriBlock
+    { "getbtcblockhash", 0, "height"},
+    { "getvbkblockhash", 0, "height"},
+    { "getrawatv", 1, "verbose"},
+    { "getrawvtb", 1, "verbose"},
+    { "getrawvbkblock", 1, "verbose"},
+    { "getpopdatabyheight", 0, "block_height"},
+    // end VeriBlock
     {"setmocktime", 0, "timestamp"},
     {"mockscheduler", 0, "delta_time"},
     {"utxoupdatepsbt", 1, "descriptors"},

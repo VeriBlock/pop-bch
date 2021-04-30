@@ -44,7 +44,7 @@
 #include <mutex>
 
 #include <vbk/adaptors/univalue_json.hpp>
-#include <vbk/pop_common.hpp>
+#include <vbk/pop_service.hpp>
 
 struct CUpdatedBlock {
     uint256 hash;
@@ -1022,10 +1022,10 @@ static UniValue getblock(const Config &config, const JSONRPCRequest &request) {
 
     UniValue json = blockToJSON(block, tip, pblockindex, verbosity >= 2);
 
-    {
+    if (VeriBlock::isPopEnabled()) {
         auto &pop = VeriBlock::GetPop();
         LOCK(cs_main);
-        auto index = pop.getAltBlockTree().getBlockIndex(std::vector<uint8_t>(hash.begin(), hash.end()));
+        auto index = pop.getAltBlockTree().getBlockIndex(block.GetHash().asVector());
         VBK_ASSERT(index);
         UniValue obj(UniValue::VOBJ);
 

@@ -35,6 +35,8 @@
 #include <validationinterface.h>
 #include <warnings.h>
 
+#include <vbk/pop_service.hpp>
+
 #include <cstdint>
 
 /**
@@ -460,6 +462,22 @@ static UniValue getblocktemplate(const Config &config,
             "target of next block\n"
             "  \"height\" : n                      (numeric) The height of the "
             "next block\n"
+            "  \"default_witness_commitment\" : \"xxxx\" (string) coinbase witness commitment \n"
+            "  \"pop_context\" : \n"
+            "    \"serialized\": \"xxx\"     (string) serialized version of AuthenticatedContextInfoContainer\n"
+            "    \"stateRoot\" : \"xxx\"     (string) Hex-encoded StateRoot=sha256d(txRoot, popDataRoot)\n"
+            "    \"context\"   : {\n"
+            "      \"height\"    : 123       (numeric) Current block height.\n"
+            "      \"firstPreviousKeystone\": \"xxx\"  (string) First previous keystone of current block.\n"
+            "      \"secondPreviousKeystone\": \"xxx\" (string) Second previous keystone of current block.\n"
+            "      }\n"
+            "    }\n"
+            "  \"pop_data_root\" : \"xxxx\"   (string) Merkle Root of PopData\n"
+            "  \"pop_data\" : { \"atvs\": [], \"vtbs\": [], \"vbkblocks\": [] }   (object) Valid POP data that must be included in next block in order they appear here (vbkblocks, vtbs, atvs).\n"
+            "  \"pop_payout\" : [                 (array) List of POP payouts that must be addedd to next coinbase in order they appear in array.\n"
+            "    \"payout_info\": \"...\",\n"
+            "    \"amount\": xxx\n"
+            "   ]\n"
             "}\n"},
         RPCExamples{HelpExampleCli("getblocktemplate", "") +
                     HelpExampleRpc("getblocktemplate", "")},
@@ -533,10 +551,11 @@ static UniValue getblocktemplate(const Config &config,
             "Error: Peer-to-peer functionality missing or disabled");
     }
 
-    if (g_rpc_node->connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0) {
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED,
-                           "Bitcoin is not connected!");
-    }
+    // VERIBLOCK: when node does not have other peers, this disables certain RPCs. Disable this condition for now.
+    //if (g_rpc_node->connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0) {
+    //    throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED,
+    //                       "Bitcoin is not connected!");
+    //}
 
     if (::ChainstateActive().IsInitialBlockDownload()) {
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, PACKAGE_NAME
@@ -718,6 +737,29 @@ static UniValue getblocktemplate(const Config &config,
     result.pushKV("curtime", pblock->GetBlockTime());
     result.pushKV("bits", strprintf("%08x", pblock->nBits));
     result.pushKV("height", int64_t(pindexPrev->nHeight) + 1);
+
+    if (VeriBlock::isPopEnabled()) {
+        //VeriBlock Data
+        const auto popDataRoot = pblock->popData.getMerkleRoot();
+        result.pushKV("pop_data_root", HexStr(popDataRoot.begin(), popDataRoot.end()));
+        result.pushKV("pop_data", altintegration::ToJSON<UniValue>(pblock->popData, /*verbose=*/true));
+        using altintegration::ContextInfoContainer;
+        auto ctx = ContextInfoContainer::createFromPrevious(VeriBlock::GetAltBlockIndex(pindexPrev),
+                                                            VeriBlock::GetPop().getConfig().getAltParams());
+        result.pushKV("pop_first_previous_keystone", HexStr(ctx.keystones.firstPreviousKeystone));
+        result.pushKV("pop_second_previous_keystone", HexStr(ctx.keystones.secondPreviousKeystone));
+
+        // pop rewards
+        UniValue popRewardsArray(UniValue::VARR);
+        VeriBlock::PoPRewards popRewards = VeriBlock::getPopRewards(*pindexPrev, Params());
+        for (const auto& itr : popRewards) {
+            UniValue popRewardValue(UniValue::VOBJ);
+            popRewardValue.pushKV("payout_info", HexStr(itr.first.begin(), itr.first.end()));
+            popRewardValue.pushKV("amount", itr.second);
+            popRewardsArray.push_back(popRewardValue);
+        }
+        result.pushKV("pop_rewards", popRewardsArray);
+    }
 
     return result;
 }

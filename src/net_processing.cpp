@@ -35,6 +35,7 @@
 #include <memory>
 
 #include <vbk/p2p_sync.hpp>
+#include <vbk/pop_service.hpp>
 
 #if defined(NDEBUG)
 #error "Bitcoin cannot be compiled without assertions."
@@ -783,8 +784,8 @@ static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex)
 static void FindNextBlocksToDownload(
     NodeId nodeid, unsigned int count,
     std::vector<const CBlockIndex *> &vBlocks, NodeId &nodeStaller,
-    const Consensus::Params
-        &consensusParams, // either pindexBestBlock or pindexLastAnouncedBlock
+    const Consensus::Params &consensusParams,
+    // either pindexBestBlock or pindexLastAnouncedBlock
     const CBlockIndex *bestBlock,
     // out parameter: sets last common block
     const CBlockIndex **lastCommonBlockOut) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
@@ -810,7 +811,7 @@ static void FindNextBlocksToDownload(
         // Bootstrap quickly by guessing a parent of our best tip is the forking
         // point. Guessing wrong in either direction is not a problem.
         *lastCommonBlockOut = ::ChainActive()[std::min(
-            state->pindexBestKnownBlock->nHeight, ::ChainActive().Height())];
+            bestBlock->nHeight, ::ChainActive().Height())];
     }
 
     // If the peer reorganized, our previous pindexLastCommonBlock may not be an
@@ -2102,7 +2103,7 @@ static bool ProcessHeadersMessage(const Config &config, CNode *pfrom,
         // much work as our tip, download as much as possible.
         if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE)
             // VeriBlock: download the chain suggested by the peer
-            /* && ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork */
+            // && ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork
         ) {
             std::vector<const CBlockIndex *> vToFetch;
             const CBlockIndex *pindexWalk = pindexLast;
@@ -2297,11 +2298,15 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
         return true;
     }
 
-    // VeriBlock
-    int pop_res =
-        VeriBlock::p2p::processPopData(pfrom, strCommand, vRecv, connman);
-    if (pop_res != -1) {
-        return pop_res;
+    // VeriBlock: if POP is not enabled, ignore POP-related P2P calls
+    if (VeriBlock::isPopEnabled()) {
+        int tipHeight = ChainActive().Height();
+        if (Params().isPopActive(tipHeight)) {
+            int pop_res = VeriBlock::p2p::processPopData(pfrom, strCommand, vRecv, connman);
+            if (pop_res >= 0) {
+                return pop_res;
+            }
+        }
     }
 
     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
@@ -3354,6 +3359,7 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                         // message handling into their own functions)
                         BlockTransactions txn;
                         txn.blockhash = cmpctblock.header.GetHash();
+                        //VeriBlock: copy POP data
                         txn.popData = cmpctblock.popData;
                         blockTxnMsg << txn;
                         fProcessBLOCKTXN = true;
@@ -3378,8 +3384,8 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                     status = tempBlock.FillBlock(*pblock, dummy);
                     if (status == READ_STATUS_OK) {
                         fBlockReconstructed = true;
-                        if (pblock && pblock->nVersion &
-                                          VeriBlock::POP_BLOCK_VERSION_BIT) {
+                        if (pblock &&
+                            (pblock->nVersion & VeriBlock::POP_BLOCK_VERSION_BIT)) {
                             assert(!pblock->popData.empty() &&
                                    "POP bit is set and POP data is empty");
                         }
@@ -4511,7 +4517,11 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
         pto->nPingUsecStart = GetTimeMicros();
         if (pto->nVersion > BIP0031_VERSION) {
             pto->nPingNonceSent = nonce;
-            connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce));
+            if(pto->nVersion > PING_BESTCHAIN_VERSION) {
+                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce, ::ChainActive().Tip()->GetBlockHash()));
+            } else {
+                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce));
+            }
         } else {
             // Peer is too old to support ping command with nonce, pong will
             // never arrive.
@@ -4950,7 +4960,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
     }
 
     // VeriBlock offer Pop Data
-    {
+    if (VeriBlock::isPopEnabled()) {
         VeriBlock::p2p::offerPopData<altintegration::ATV>(pto, connman,
                                                           msgMaker);
         VeriBlock::p2p::offerPopData<altintegration::VTB>(pto, connman,
