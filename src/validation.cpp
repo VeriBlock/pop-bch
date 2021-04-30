@@ -2577,15 +2577,12 @@ CBlockIndex *CChainState::FindBestChain() {
 
         int popComparisonResult = 0;
 
-        if (Params().isPopActive(bestCandidate->nHeight)) {
-            popComparisonResult =
-                VeriBlock::compareForks(*bestCandidate, *pindexNew);
+        if (VeriBlock::isPopEnabled() && Params().isPopActive(bestCandidate->nHeight)) {
+            popComparisonResult = VeriBlock::compareForks(*bestCandidate, *pindexNew);
         } else {
-            popComparisonResult =
-                CBlockIndexWorkComparator()(bestCandidate, pindexNew) == true
-                    ? -1
-                    : 1;
+            popComparisonResult = CBlockIndexWorkComparator()(bestCandidate, pindexNew) ? -1 : 1;
         }
+
         // even if next candidate is pop equal to current pindexNew, it is
         // likely to have higher work
         if (popComparisonResult <= 0) {

@@ -7,7 +7,7 @@
 #include <hash.h>
 
 #include <vbk/merkle.hpp>
-#include <vbk/pop_common.hpp>
+#include <vbk/pop_service.hpp>
 
 namespace VeriBlock {
 
@@ -18,6 +18,11 @@ uint256 TopLevelMerkleRoot(const CBlockIndex *prevIndex, const CBlock &block,
 
     // first, build regular merkle root from transactions
     auto txRoot = BlockMerkleRoot(block, mutated);
+
+    // if POP is not enabled for 'block' , use original txRoot as merkle root
+    if (!VeriBlock::isPopEnabled()) {
+        return txRoot;
+    }
 
     // if POP is not enabled for 'block' , use original txRoot as merkle root
     const auto height = prevIndex == nullptr ? 0 : prevIndex->nHeight + 1;

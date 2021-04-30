@@ -306,6 +306,9 @@ namespace {
     UniValue getblock(const JSONRPCRequest &req, Tree &tree,
                       const std::string &chain) {
         check_getblock(req, chain);
+
+        EnsurePopEnabled();
+
         LOCK(cs_main);
 
         using block_t = typename Tree::block_t;
