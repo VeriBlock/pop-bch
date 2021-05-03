@@ -97,7 +97,7 @@ jobs:
           username: ${{ secrets.ARTIFACT_USER }}
           key: ${{ secrets.ARTIFACT_KEY }}
           passphrase: ${{ secrets.ARTIFACT_KEY_PASSPHRASE }}
-          source: vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-linux-x64.tar.gz
+          source: BitcoinABC-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-linux-x64.tar.gz
           target: ${{ secrets.ARTIFACT_PATH }}
       - name: make check
         timeout-minutes: 60
