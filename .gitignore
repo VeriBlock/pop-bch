@@ -131,4 +131,5 @@ contrib/devtools/split-debug.sh
 .vagrant
 
 cmake-build-*
+install
 .idea

@@ -25,6 +25,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x' # Version range or exact version of a Python version to use, using SemVer's version range syntax
+          architecture: 'x64' # optional x64 or x86. Defaults to x64 if not specified
       - name: Extract branch name & commit
         id: extract_branch
         run: |
@@ -47,20 +51,22 @@ jobs:
         run: echo "VERIBLOCK_POP_CPP_VERSION=$(awk -F '=' '/\$\(package\)_version/{print $NF}' $PWD/depends/packages/veriblock-pop-cpp.mk | head -n1)" >> $GITHUB_ENV
       - name: veriblock-pop-cpp release version
         run: echo Using veriblock-pop-cpp version $VERIBLOCK_POP_CPP_VERSION
-      - name: run apt update
-        run: sudo apt-get update
-      - name: install build requirements
-        run: sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 ccache
-      - name: install dependencies
-        run: sudo apt-get install qt5-default libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
+      - name: install apt-get deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 ccache
+          sudo apt-get install qt5-default libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
       - name: install veriblock-pop-cpp
         run: |
           wget https://github.com/VeriBlock/alt-integration-cpp/archive/${VERIBLOCK_POP_CPP_VERSION}.tar.gz;
           tar -xf ${VERIBLOCK_POP_CPP_VERSION}.tar.gz;
           cd alt-integration-cpp-${VERIBLOCK_POP_CPP_VERSION};
+          python3 setup.py install
+          python3 setup.py test
+          rm -rf build
           mkdir build;
           cd build;
-          cmake .. -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DTESTING=OFF -DWITH_PYPOPMINER=ON;
+          cmake .. -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DTESTING=OFF -DWITH_PYPOPTOOLS=ON;
           make -j2;
           sudo make install
       - name: install jemalloc
@@ -78,8 +84,8 @@ jobs:
       - name: create artifacts
         if: success()
         run: |
-          mv ./install vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
-          tar czvf vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-linux-x64.tar.gz vBitcoin-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}/
+          mv ./install BitcoinABC-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}
+          tar czvf BitcoinABC-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}-linux-x64.tar.gz BitcoinABC-${{ steps.extract_branch.outputs.branch }}-${{ steps.extract_branch.outputs.git_hash }}/
       - name: upload artifacts
         if: success()
         uses: appleboy/scp-action@master
@@ -103,6 +109,12 @@ jobs:
         if: always()
         timeout-minutes: 60
         run: python3 test/functional/test_runner.py
+      - name: run pop integration tests
+        if: always()
+        timeout-minutes: 60
+        env:
+          VBITCOIND_PATH: './src/bitcoind'
+        run: python3 test/integration/test_runner.py
 
 #  x86_64-w64-mingw32:
 #    runs-on: ubuntu-latest
