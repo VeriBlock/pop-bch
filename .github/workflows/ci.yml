@@ -101,7 +101,9 @@ jobs:
           target: ${{ secrets.ARTIFACT_PATH }}
       - name: make check
         timeout-minutes: 60
-        run: make check
+        run: |
+          cd build;
+          make check
       - name: upload logs
         uses: actions/upload-artifact@v1
         if: failure()
