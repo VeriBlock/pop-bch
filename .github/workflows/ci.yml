@@ -116,7 +116,7 @@ jobs:
         if: always()
         timeout-minutes: 60
         env:
-          VBITCOIND_PATH: './src/bitcoind'
+          VBITCOIND_PATH: '.build/src/bitcoind'
         run: python3 test/integration/test_runner.py
 
 #  x86_64-w64-mingw32:
