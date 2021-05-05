@@ -55,7 +55,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 ccache
-          sudo apt-get install qt5-default libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
+          sudo apt-get install libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
       - name: install veriblock-pop-cpp
         run: |
           pip3 install wheel
@@ -83,7 +83,7 @@ jobs:
       - name: cmake
         run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF -DBUILD_BITCOIN_WALLET=ON -DBUILD_BITCOIN_ZMQ=ON
       - name: make
-        run: cmake --build build -j12 -- install
+        run: cmake --build build -j$(nproc) -- install
       - name: create artifacts
         if: success()
         run: |
@@ -110,6 +110,11 @@ jobs:
         with:
           name: test-suite
           path: src/test-suite.log
+      - name: debug functional test config.ini
+        run: |
+          echo "-----------------------------------------------------";
+          cat /home/runner/work/pop-bch/pop-bch/build/test/config.ini;
+          echo "-----------------------------------------------------"
       - name: run functional tests
         if: always()
         timeout-minutes: 60
@@ -118,7 +123,7 @@ jobs:
           BITCOINCLI: '/home/runner/work/pop-bch/pop-bch/build/src/bitcoin-cli'
           ENABLE_WALLET: 'ON'
           ENABLE_ZMQ: 'ON'
-        run: python3 test/functional/test_runner.py
+        run: cd /home/runner/work/pop-bch/pop-bch/build/; python3 test/functional/test_runner.py
       - name: run pop integration tests
         if: always()
         timeout-minutes: 60
