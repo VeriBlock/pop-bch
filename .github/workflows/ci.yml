@@ -110,10 +110,12 @@ jobs:
         with:
           name: test-suite
           path: src/test-suite.log
-      - name: run functional tests
-        if: always()
-        timeout-minutes: 60
-        run: python3 test/functional/test_runner.py
+#      - name: run functional tests
+#        if: always()
+#        timeout-minutes: 60
+#        env:
+#          BITCOIND: '/home/runner/work/pop-bch/pop-bch/build/src/bitcoind'
+#        run: python3 test/functional/test_runner.py
       - name: run pop integration tests
         if: always()
         timeout-minutes: 60
