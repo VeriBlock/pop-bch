@@ -51,7 +51,7 @@ class ConfArgsTest(BitcoinTestFramework):
         # check for the error above.
         # TODO: Revert this check when mainnet is supported.
         self.nodes[0].assert_start_raises_init_error(
-            expected_msg='Error: currently only supports test/regtest')
+            expected_msg='Error: currently only supports poptestnet/regtest')
 
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('nono\n')
