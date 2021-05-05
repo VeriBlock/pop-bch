@@ -116,6 +116,8 @@ jobs:
         env:
           BITCOIND: '/home/runner/work/pop-bch/pop-bch/build/src/bitcoind'
           BITCOINCLI: '/home/runner/work/pop-bch/pop-bch/build/src/bitcoin-cli'
+          ENABLE_WALLET: 'ON'
+          ENABLE_ZMQ: 'ON'
         run: python3 test/functional/test_runner.py
       - name: run pop integration tests
         if: always()
