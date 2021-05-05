@@ -47,13 +47,13 @@ class VBchNode(VBitcoindNode):
         rpc_password = 'testpassword'
         self.rpc = JsonRpcApi(rpc_url, user=rpc_user, password=rpc_password)
 
-        vbitcoind_path = os.environ.get('VBITCOIND_PATH')
+        vbitcoind_path = os.environ.get('BITCOIND')
         if vbitcoind_path == None:
-            raise Exception("VBITCOIND_PATH env var is not set. Set up the path to the vbitcoind binary to the VBITCOIND_PATH env var")
+            raise Exception("BITCOIND env var is not set. Set up the path to the bitcoind binary to the BITCOIND env var")
 
         exe = Path(Path.cwd(), vbitcoind_path)
         if not exe:
-            raise Exception("VBitcoinNode: vbitcoind is not found in PATH")
+            raise Exception("BitcoinNode: bitcoind is not found in PATH")
 
         assert_dir_accessible(datadir)
         args = [

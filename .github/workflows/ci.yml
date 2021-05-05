@@ -81,7 +81,7 @@ jobs:
           make -j
           sudo make install
       - name: cmake
-        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF
+        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF -DENABLE_WALLET=ON -DENABLE_ZMQ=ON
       - name: make
         run: cmake --build build -- -j2 install
       - name: create artifacts
@@ -121,5 +121,5 @@ jobs:
         if: always()
         timeout-minutes: 60
         env:
-          VBITCOIND_PATH: './build/src/bitcoind'
+          BITCOIND: '/home/runner/work/pop-bch/pop-bch/build/src/bitcoind'
         run: python3 test/integration/test_runner.py
