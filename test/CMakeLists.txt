@@ -9,7 +9,7 @@ endif()
 
 # Create build ini file
 configure_file(config.ini.cmake.in config.ini)
-configure_file(config.ini.cmake.in ${CMAKE_CURRENT_SOURCE_DIR}/config.ini)
+#configure_file(config.ini.cmake.in ${CMAKE_CURRENT_SOURCE_DIR}/config.ini)
 
 ###
 # Setup symlinks for testing
