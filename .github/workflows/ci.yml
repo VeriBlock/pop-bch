@@ -81,7 +81,7 @@ jobs:
           make -j
           sudo make install
       - name: cmake
-        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF -DENABLE_WALLET=ON -DENABLE_ZMQ=ON
+        run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF -DBUILD_BITCOIN_WALLET=ON -DBUILD_BITCOIN_ZMQ=ON
       - name: make
         run: cmake --build build -- -j2 install
       - name: create artifacts
