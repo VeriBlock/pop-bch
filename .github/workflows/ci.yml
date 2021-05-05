@@ -161,7 +161,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 ccache
-          sudo apt-get install qt5-default qttools5-dev libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
+          sudo apt-get install protobuf-compiler libprotobuf-dev qt5-default qttools5-dev libevent-dev python3-zmq python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libdb5.3-dev libdb5.3++-dev
       - name: install veriblock-pop-cpp
         run: |
           pip3 install wheel
