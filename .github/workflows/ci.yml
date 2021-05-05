@@ -113,11 +113,7 @@ jobs:
       - name: run functional tests
         if: always()
         timeout-minutes: 60
-        env:
-          BITCOIND: 'build/src/bitcoind'
-        run: |
-          pwd;
-          python3 test/functional/test_runner.py
+        run: python3 test/functional/test_runner.py
       - name: run pop integration tests
         if: always()
         timeout-minutes: 60
