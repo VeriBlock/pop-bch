@@ -95,7 +95,7 @@ void selectPopConfig(const std::string& network)
 {
     altintegration::Config popconfig;
 
-    if (network == CBaseChainParams::TESTNET) {
+    if (network == CBaseChainParams::POPTESTNET) {
         auto btcparam = std::make_shared<altintegration::BtcChainParamsTest>();
         popconfig.setBTC(testnetBTCstartHeight, testnetBTCblocks, btcparam);
         auto vbkparam = std::make_shared<altintegration::VbkChainParamsTest>();
@@ -110,7 +110,7 @@ void selectPopConfig(const std::string& network)
         auto altparam = std::make_shared<VeriBlock::AltChainParamsVBCH>(Params().GenesisBlock());
         popconfig.alt = altparam;
     } else {
-        throw std::invalid_argument("currently only supports test/regtest");
+        throw std::invalid_argument("currently only supports poptestnet/regtest");
     }
 
     VeriBlock::SetPopConfig(popconfig);
