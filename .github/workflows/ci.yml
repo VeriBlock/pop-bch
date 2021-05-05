@@ -83,7 +83,7 @@ jobs:
       - name: cmake
         run: cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=install -DBUILD_BITCOIN_QT=OFF -DBUILD_BITCOIN_WALLET=ON -DBUILD_BITCOIN_ZMQ=ON
       - name: make
-        run: cmake --build build -- -j2 install
+        run: cmake --build build -j12 -- install
       - name: create artifacts
         if: success()
         run: |
