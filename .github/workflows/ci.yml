@@ -114,8 +114,7 @@ jobs:
         if: always()
         timeout-minutes: 60
         env:
-          # /home/runner/work/pop-bch/pop-bch/build/src/bitcoind
-          BITCOIND: './build/src/bitcoind'
+          BITCOIND: 'build/src/bitcoind'
         run: |
           pwd;
           python3 test/functional/test_runner.py
