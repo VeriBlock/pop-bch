@@ -575,7 +575,7 @@ public:
         // chainTxData = ChainTxData{1522608381, 15052068, 0.15};
 
         //! Same for the regtest
-        strNetworkID = CBaseChainParams::REGTEST;
+        strNetworkID = CBaseChainParams::POPTESTNET;
         consensus.nSubsidyHalvingInterval = 150;
         // always enforce P2SH BIP16 on regtest
         consensus.BIP16Height = 0;
