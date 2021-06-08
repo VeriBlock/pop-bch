@@ -1,8 +1,8 @@
 package=veriblock-pop-cpp
-$(package)_version=dbce77f99a65ff539cac9e1d6cc3da05514879ce
+$(package)_version=bc2e4e09e15005b1e9da36a2cf3f5f17ed3722c9
 $(package)_download_path=https://github.com/VeriBlock/alt-integration-cpp/archive/
 $(package)_file_name=$($(package)_version).tar.gz
-$(package)_sha256_hash=3758e018fad1e03f0e76f43b9df601574e00bdd92a20da287b2070dac703bb9f
+$(package)_sha256_hash=4e5368468d3c86782c3f79f94a82a1f5c2c6d7fd69818192c3ac10ead2df58d9
 $(package)_build_subdir=build
 $(package)_build_type=$(BUILD_TYPE)
 $(package)_asan=$(ASAN)
@@ -32,7 +32,7 @@ else ifeq ($(HOST), x86_64-pc-linux-gnu)
   endef
 else
   define $(package)_config_cmds
-    cmake -DCMAKE_C_COMPILER=$(HOST)-gcc -DCMAKE_CXX_COMPILER=$(HOST)-g++ \
+    cmake -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
     -DCMAKE_INSTALL_PREFIX=$(host_prefix) -DTESTING=OFF -DSHARED=OFF ..
   endef
 endif

@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <blockindex.h>
 #include "pop_common.hpp"
+#include <blockindex.h>
 
 namespace VeriBlock {
 
@@ -16,35 +16,35 @@ altintegration::PopContext &GetPop() {
     return *app;
 }
 
-void StopPop()
-{
+void StopPop() {
     if (app) {
         app->shutdown();
     }
 }
 
-void SetPopConfig(const altintegration::Config& newConfig)
-{
+void SetPopConfig(const altintegration::Config &newConfig) {
     config = std::make_shared<altintegration::Config>(newConfig);
 }
 
-void SetPop(std::shared_ptr<altintegration::PayloadsStorage> db)
-{
+void SetPop(std::shared_ptr<altintegration::PayloadsStorage> payloads_provider,
+            std::shared_ptr<altintegration::BlockReader> block_provider) {
     assert(config && "Config is not initialized. Invoke SetPopConfig.");
-    app = altintegration::PopContext::create(config, db);
+    app = altintegration::PopContext::create(config, payloads_provider,
+                                             block_provider);
 }
 
 std::string toPrettyString(const altintegration::PopContext &pop) {
     return pop.getAltBlockTree().toPrettyString();
 }
 
-altintegration::BlockIndex<altintegration::AltBlock>* GetAltBlockIndex(const uint256& hash)
-{
-    return GetPop().getAltBlockTree().getBlockIndex(std::vector<uint8_t>{hash.begin(), hash.end()});
+altintegration::BlockIndex<altintegration::AltBlock> *
+GetAltBlockIndex(const uint256 &hash) {
+    return GetPop().getAltBlockTree().getBlockIndex(
+        std::vector<uint8_t>{hash.begin(), hash.end()});
 }
 
-altintegration::BlockIndex<altintegration::AltBlock>* GetAltBlockIndex(const CBlockIndex* index)
-{
+altintegration::BlockIndex<altintegration::AltBlock> *
+GetAltBlockIndex(const CBlockIndex *index) {
     return index == nullptr ? nullptr : GetAltBlockIndex(index->GetBlockHash());
 }
 

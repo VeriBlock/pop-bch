@@ -31,7 +31,7 @@ void InitPopContext(CDBWrapper& db);
 bool hasPopData(CBlockTreeDB& db);
 altintegration::PopData getPopData(const CBlockIndex& prev);
 void saveTrees(CDBBatch* batch);
-bool loadTrees(CDBWrapper& db);
+bool loadTrees();
 
 //! pop rewards
 PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& params)

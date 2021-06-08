@@ -28,7 +28,8 @@ namespace VeriBlock {
 
 void InitPopContext(CDBWrapper &db) {
     auto payloads_provider = std::make_shared<PayloadsProvider>(db);
-    SetPop(payloads_provider);
+    auto block_provider = std::make_shared<BlockReader>(db);
+    SetPop(payloads_provider, block_provider);
 
     auto &app = GetPop();
     app.getMemPool().onAccepted<altintegration::ATV>(
@@ -87,7 +88,8 @@ bool acceptBlock(const CBlockIndex &indexNew, BlockValidationState &state) {
         LogPrintf("ERROR: alt tree cannot accept block %s\n",
                   instate.toString());
         return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID,
-                             REJECT_INVALID, "accept-block", instate.GetDebugMessage());
+                             REJECT_INVALID, "accept-block",
+                             instate.GetDebugMessage());
     }
 
     return true;
@@ -131,7 +133,8 @@ altintegration::PopData getPopData(const CBlockIndex &pindexPrev)
     return GetPop().generatePopData(prevHash);
 }
 
-PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& params) {
+PoPRewards getPopRewards(const CBlockIndex &pindexPrev,
+                         const CChainParams &params) {
     AssertLockHeld(cs_main);
     auto &pop = GetPop();
 
@@ -157,8 +160,8 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& para
     assert(ret);
 
     auto rewards = pop.getPopPayout(prevHash);
-    int halving =
-        (pindexPrev.nHeight + 1) / params.GetConsensus().nSubsidyHalvingInterval;
+    int halving = (pindexPrev.nHeight + 1) /
+                  params.GetConsensus().nSubsidyHalvingInterval;
     PoPRewards result{};
     // erase rewards, that pay 0 satoshis and halve rewards
     for (const auto &r : rewards) {
@@ -176,7 +179,7 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev, const CChainParams& para
 
 void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
                                  const CBlockIndex &pindexPrev,
-                                 const CChainParams& params) {
+                                 const CChainParams &params) {
     AssertLockHeld(cs_main);
     PoPRewards rewards = getPopRewards(pindexPrev, params);
     assert(coinbaseTx.vout.size() == 1 &&
@@ -191,7 +194,7 @@ void addPopPayoutsIntoCoinbaseTx(CMutableTransaction &coinbaseTx,
 
 bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
                                    const CBlockIndex &pindex,
-                                   const CChainParams& params,
+                                   const CChainParams &params,
                                    Amount &blockReward,
                                    BlockValidationState &state) {
     AssertLockHeld(cs_main);
@@ -238,7 +241,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
         }
 
         // payout found
-        auto& actualAmount = p->second;
+        auto &actualAmount = p->second;
         // does it have correct amount?
         if (actualAmount != expectedAmount) {
             return state.Invalid(
@@ -253,8 +256,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
         nTotalPopReward += expectedAmount;
     }
 
-    Amount PoWBlockReward =
-        GetBlockSubsidy(pindex.nHeight, params);
+    Amount PoWBlockReward = GetBlockSubsidy(pindex.nHeight, params);
 
     blockReward = nTotalPopReward + PoWBlockReward + nFees;
 
@@ -269,14 +271,15 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction &tx, const Amount &nFees,
     return true;
 }
 
-Amount getCoinbaseSubsidy(Amount subsidy, int32_t height, const CChainParams& params) {
+Amount getCoinbaseSubsidy(Amount subsidy, int32_t height,
+                          const CChainParams &params) {
     if (!params.isPopActive(height)) {
         return subsidy;
     }
 
-    //int64_t powRewardPercentage = 100 - params.PopRewardPercentage();
-    //Amount newSubsidy = powRewardPercentage * subsidy;
-    //return newSubsidy / 100;
+    // int64_t powRewardPercentage = 100 - params.PopRewardPercentage();
+    // Amount newSubsidy = powRewardPercentage * subsidy;
+    // return newSubsidy / 100;
     return subsidy;
 }
 
@@ -303,11 +306,10 @@ void saveTrees(CDBBatch *batch) {
     GetPop().saveAllTrees(b);
 }
 
-bool loadTrees(CDBWrapper &db) {
+bool loadTrees() {
     altintegration::ValidationState state;
 
-    BlockReader reader(db);
-    if (!GetPop().loadAllTrees(reader, state)) {
+    if (!GetPop().loadAllTrees(state)) {
         return error("%s: failed to load trees %s", __func__, state.toString());
     }
 
@@ -341,30 +343,29 @@ int compareForks(const CBlockIndex &leftForkTip,
 
 void addDisconnectedPopdata(const altintegration::PopData &popData) {
     altintegration::ValidationState state;
-    auto& popmp = VeriBlock::GetPop().getMemPool();
-    for (const auto& i : popData.context) {
+    auto &popmp = VeriBlock::GetPop().getMemPool();
+    for (const auto &i : popData.context) {
         popmp.submit(i, state);
     }
-    for (const auto& i : popData.vtbs) {
+    for (const auto &i : popData.vtbs) {
         popmp.submit(i, state);
     }
-    for (const auto& i : popData.atvs) {
+    for (const auto &i : popData.atvs) {
         popmp.submit(i, state);
     }
 }
 
-bool isPopEnabled()
-{
-    auto* tip = ChainActive().Tip();
+bool isPopEnabled() {
+    auto *tip = ChainActive().Tip();
     if (tip != nullptr) {
         return isPopEnabled(tip->nHeight);
     }
     return false;
 }
 
-bool isPopEnabled(int32_t height)
-{
-    auto block = VeriBlock::GetPop().getConfig().getAltParams().getBootstrapBlock();
+bool isPopEnabled(int32_t height) {
+    auto block =
+        VeriBlock::GetPop().getConfig().getAltParams().getBootstrapBlock();
     return height >= block.getHeight();
 }
 

@@ -1836,12 +1836,11 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     Amount blockReward = GetBlockSubsidy(pindex->pprev->nHeight, params);
     blockReward += nFees;
 
+    assert(pindex->pprev && "previous block ptr is nullptr");
+    if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, blockReward, state)) {
+        return false;
+    }
     if (VeriBlock::isPopEnabled()) {
-        assert(pindex->pprev && "previous block ptr is nullptr");
-        if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, blockReward, state)) {
-            return false;
-        }
-
         altintegration::ValidationState _state;
         if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID, "bad-block-pop",
@@ -4813,7 +4812,7 @@ bool CChainState::LoadBlockIndex(const Consensus::Params &params,
         AssertLockHeld(cs_main);
 
         // load blocks
-        if (!VeriBlock::loadTrees(blocktree)) {
+        if (!VeriBlock::loadTrees()) {
             return false;
         }
 
