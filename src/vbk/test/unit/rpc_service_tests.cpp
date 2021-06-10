@@ -74,4 +74,47 @@ BOOST_FIXTURE_TEST_CASE(submitpop_test, E2eFixture) {
     }
 }
 
+BOOST_FIXTURE_TEST_CASE(extractblockinfo_test, E2eFixture) {
+    auto tip = ChainActive().Tip();
+    BOOST_CHECK(tip != nullptr);
+
+    // endorse tip
+    CBlock block = endorseAltBlockAndMine(tip->GetBlockHash(), 10);
+
+    // encode PublicationData
+    BOOST_CHECK_EQUAL(block.popData.atvs.size(), 1);
+    auto pubData = block.popData.atvs[0].transaction.publicationData;
+    altintegration::SerializeToHex(pubData);
+
+    JSONRPCRequest request;
+    request.strMethod = std::move("extractblockinfo");
+    request.params = UniValue(UniValue::VARR);
+    request.params.push_back(altintegration::SerializeToHex(pubData));
+    request.fHelp = false;
+
+    if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+
+    UniValue result;
+    GlobalConfig config;
+    BOOST_CHECK_NO_THROW(result = tableRPC.execute(config, request));
+
+    // decode AuthenticatedContextInfoContainer
+    altintegration::ContextInfoContainer container;
+    {
+        altintegration::ValidationState state;
+        altintegration::ReadStream stream(pubData.contextInfo);
+        BOOST_CHECK(altintegration::DeserializeFromVbkEncoding(
+            stream, container, state));
+    }
+
+    BOOST_CHECK_EQUAL(result["hash"].get_str(), HexStr(tip->GetBlockHash()));
+    BOOST_CHECK_EQUAL(result["height"].get_int64(), tip->nHeight);
+    BOOST_CHECK_EQUAL(result["previousHash"].get_str(),
+                      HexStr(tip->GetBlockHeader().hashPrevBlock));
+    BOOST_CHECK_EQUAL(result["previousKeystone"].get_str(),
+                      HexStr(container.keystones.firstPreviousKeystone));
+    BOOST_CHECK_EQUAL(result["secondPreviousKeystone"].get_str(),
+                      HexStr(container.keystones.secondPreviousKeystone));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
