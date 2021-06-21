@@ -125,12 +125,11 @@ bool setState(const BlockHash &hash, altintegration::ValidationState &state) {
     return GetPop().getAltBlockTree().setState(hash.asVector(), state);
 }
 
-altintegration::PopData getPopData(const CBlockIndex &pindexPrev)
+altintegration::PopData generatePopData()
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
 
-    auto prevHash = pindexPrev.GetBlockHash().asVector();
-    return GetPop().generatePopData(prevHash);
+    return GetPop().generatePopData();
 }
 
 PoPRewards getPopRewards(const CBlockIndex &pindexPrev,

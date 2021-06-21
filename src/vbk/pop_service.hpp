@@ -29,7 +29,7 @@ void InitPopContext(CDBWrapper& db);
 
 //! returns true if all tips are stored in database, false otherwise
 bool hasPopData(CBlockTreeDB& db);
-altintegration::PopData getPopData(const CBlockIndex& prev);
+altintegration::PopData generatePopData();
 void saveTrees(CDBBatch* batch);
 bool loadTrees();
 
