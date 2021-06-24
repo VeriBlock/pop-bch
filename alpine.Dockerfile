@@ -1,5 +1,5 @@
 # Build stage for Bitcoin ABC
-FROM alpine as bitcoin-abc
+FROM alpine:3.13 as bitcoin-abc
 
 #COPY --from=berkeleydb /opt /opt
 
@@ -64,7 +64,7 @@ RUN strip ${VBCH_PREFIX}/lib64/libbitcoinconsensus.so.0.0.0
 
 
 # Build stage for compiled artifacts
-FROM alpine
+FROM alpine:3.13
 
 RUN apk --no-cache add \
   boost \
