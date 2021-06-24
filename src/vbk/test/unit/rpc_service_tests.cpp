@@ -122,4 +122,20 @@ BOOST_FIXTURE_TEST_CASE(extractblockinfo_test, E2eFixture) {
         uint256(container.keystones.secondPreviousKeystone).GetHex());
 }
 
+BOOST_FIXTURE_TEST_CASE(setmempooldostalledcheck_test, E2eFixture) {
+    {
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(),
+                          true);
+    }
+
+    BOOST_CHECK_NO_THROW(CallRPC("setmempooldostalledcheck false"));
+
+    {
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(),
+                          false);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
