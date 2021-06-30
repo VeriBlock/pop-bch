@@ -19,7 +19,7 @@ on:
 
 jobs:
   ubuntu:
-    runs-on: [self-hosted, ubuntu-latest]
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +52,7 @@ jobs:
   
   
   alpine:
-    runs-on: [self-hosted, ubuntu-latest]
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v1
       - name: Get snapshot hash, version & branch
