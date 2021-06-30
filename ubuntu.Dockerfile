@@ -1,5 +1,6 @@
 FROM ubuntu
 
+<<<<<<< HEAD
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
   autoconf \
@@ -25,6 +26,23 @@ RUN apt-get update && apt-get install -y \
   && ln -s /usr/bin/python3 python \
   && pip3 --no-cache-dir install --upgrade pip \
   && rm -rf /var/lib/apt/lists/*
+=======
+# Key imports:
+# gosu pubkey
+# jasonbcox, bitcoin-abc dev pubkey
+RUN useradd -r bitcoin \
+  && apt-get update -y \
+  && apt-get install -y curl gnupg \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+  && set -ex \
+  && for key in \
+    B42F6819007F00F88E364FD4036A9C25BF357DD4 \
+    3BB16D00D9A6D281591BDC76E4486356E7A81D2C \
+  ; do \
+    gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$key"; \
+  done
+>>>>>>> 9181bb404 (fix syntax)
 
 # Upgrade pip to latest version
 RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
