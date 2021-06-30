@@ -117,7 +117,7 @@ QString TransactionDesc::FormatBFIStatus(TransactionRecord *rec)
             }
             url = url + "%1/chains/transactions/%2";
         }
-        url = url.arg(QString::number(VeriBlock::ALT_CHAIN_ID)).arg(rec->getTxHash());
+        url = url.arg(QString::number(VeriBlock::ALT_CHAIN_ID)).arg(rec->getTxID());
 
         QEventLoop loop;
         QNetworkAccessManager nam;
