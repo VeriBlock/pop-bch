@@ -67,7 +67,6 @@ RUN strip ${VBCH_PREFIX}/bin/bitcoin-tx
 RUN strip ${VBCH_PREFIX}/bin/bitcoin-wallet
 RUN strip ${VBCH_PREFIX}/bin/bitcoin-seeder
 RUN strip ${VBCH_PREFIX}/bin/bitcoind
-RUN strip ${VBCH_PREFIX}/lib64/libbitcoinconsensus.so.0.0.0
 
 ENV DATA_DIR=/home/bitcoin/.bitcoin
 ENV VBCH_PREFIX=/opt/bitcoin
@@ -76,9 +75,8 @@ ENV PATH=${VBCH_PREFIX}/bin:$PATH
 COPY --from=ubuntu /opt /opt
 
 RUN mkdir -p ${DATA_DIR}
-RUN set -x \
-    && addgroup -g 1001 -S bitcoin \
-    && adduser -u 1001 -D -S -G bitcoin bitcoin
+RUN groupadd -r --gid 1001 bitcoin
+RUN useradd --no-log-init -r --uid 1001 --gid 1001 --create-home --shell /bin/bash bitcoin
 RUN chown -R 1001:1001 ${DATA_DIR}
 USER bitcoin
 WORKDIR $DATA_DIR
