@@ -337,3 +337,20 @@ class VBchNode(Node):
             code=s.get('code', ''),
             message=s.get('message', '')
         )
+
+    def getrpcfunctions(self) -> RpcFunctions:
+        return RpcFunctions(
+            get_popdata_by_height = 'getpopdatabyheight',
+            get_popdata_by_hash = 'getpopdatabyhash',
+            submit_atv = 'submitpopatv',
+            submit_vtb = 'submitpopvtb',
+            submit_vbk = 'submitpopvbk',
+            get_missing_btc_block_hashes = 'getmissingbtcblockhashes',
+            extract_block_info = 'extractblockinfo',
+            get_vbk_block = 'getvbkblock',
+            get_btc_block = 'getbtcblock',
+            get_vbk_best_block_hash = 'getvbkbestblockhash',
+            get_btc_best_block_hash = 'getbtcbestblockhash',
+            get_raw_atv = 'getrawatv',
+            get_raw_vtb = 'getrawvtb',
+        )
