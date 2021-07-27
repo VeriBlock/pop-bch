@@ -145,6 +145,9 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // Nov 15, 2021 12:00:00 UTC protocol upgrade
+        consensus.selectronActivationTime = 1636977600;
+
         // VeriBlock
         // TODO: set an VeriBlock pop security fork height
         // consensus.VeriBlockPopSecurityHeight = -1;
@@ -352,6 +355,9 @@ public:
 
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
+
+        // Nov 15, 2021 12:00:00 UTC protocol upgrade
+        consensus.selectronActivationTime = 1636977600;
 
         // VeriBlock
         // TODO: set an VeriBlock pop security fork height
@@ -638,6 +644,13 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // Nov 15, 2029 12:00:00 UTC protocol upgrade
+        // Effectively disable it due to malfunction
+        // Tests fail with mandatory-script-verify-flag-failed error and
+        // Insufficient Funds error
+        consensus.selectronActivationTime = 1889438400;
+
+
         // VeriBlock
         // TODO: set an VeriBlock pop security fork height
         consensus.VeriBlockPopSecurityHeight = 200;
@@ -759,6 +772,12 @@ public:
 
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
+
+        // Nov 15, 2029 12:00:00 UTC protocol upgrade
+        // Effectively disable it due to malfunction
+        // Tests fail with mandatory-script-verify-flag-failed error and
+        // Insufficient Funds error
+        consensus.selectronActivationTime = 1889438400;
 
         // VeriBlock
         // TODO: set an VeriBlock pop security fork height
