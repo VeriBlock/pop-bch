@@ -5,7 +5,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file LICENSE or http://www.opensource.org/licenses/mit-license.php.
 
-from test_framework.pop import mine_vbk_blocks, mine_until_pop_enabled
+from test_framework.pop import mine_vbk_blocks, mine_until_pop_active
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -25,7 +25,7 @@ class PopPayouts(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_all(self.nodes)
@@ -48,7 +48,7 @@ class PopPayouts(BitcoinTestFramework):
         node0_tip_hash = self.nodes[0].generate(nblocks=1)[0]
         node0_tip = self.nodes[0].getblock(node0_tip_hash)
 
-        assert len(node0_tip['pop']['state']['stored']['vbkblocks']) == vbk_blocks_amount == len(vbk_blocks)
+        assert len(node0_tip['pop']['data']['vbkblocks']) == vbk_blocks_amount == len(vbk_blocks)
         assert_equal(node0_tip, self.get_best_block(0))
 
         node1_tip = self.get_best_block(1)
@@ -73,7 +73,7 @@ class PopPayouts(BitcoinTestFramework):
         tip_hash = self.nodes[1].generate(nblocks=1)[0]
         tip = self.nodes[1].getblock(tip_hash)
 
-        assert len(tip['pop']['state']['stored']['vbkblocks']) == vbk_blocks_amount == len(vbk_blocks)
+        assert len(tip['pop']['data']['vbkblocks']) == vbk_blocks_amount == len(vbk_blocks)
 
         self.log.info("success! _test_mempool_reorg_case()")
 

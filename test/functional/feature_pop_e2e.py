@@ -11,7 +11,7 @@ Test with multiple nodes, and multiple PoP endorsements, checking to make sure n
 import time
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.pop import mine_until_pop_enabled
+from test_framework.pop import mine_until_pop_active
 from test_framework.util import (
     connect_nodes,
 )
@@ -32,7 +32,7 @@ class PopE2E(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
@@ -45,6 +45,7 @@ class PopE2E(BitcoinTestFramework):
         assert self.nodes[0].getpeerinfo()[0]['banscore'] == 0
         assert len(self.nodes[1].getpeerinfo()) == 1
         assert self.nodes[1].getpeerinfo()[0]['banscore'] == 0
+        lastblock = self.nodes[0].getblockcount()
 
         vbk_blocks_amount = 100
         self.log.info("generate vbk blocks on node0, amount {}".format(vbk_blocks_amount))
@@ -86,10 +87,8 @@ class PopE2E(BitcoinTestFramework):
         containingblock = self.nodes[0].generate(nblocks=1)
         containingblock = self.nodes[0].getblock(containingblock[0])
 
-        self.log.error(containingblock['pop']['state']['stored']['vtbs'])
-        self.log.error(vtbs_amount)
-        assert len(containingblock['pop']['state']['stored']['vtbs']) == vtbs_amount
-        assert len(containingblock['pop']['state']['stored']['vbkblocks']) == vbk_blocks_amount + vtbs_amount + 1
+        assert len(containingblock['pop']['data']['vtbs']) == vtbs_amount
+        assert len(containingblock['pop']['data']['vbkblocks']) == vbk_blocks_amount + vtbs_amount + 1
 
         assert lastblock >= 6
         self.log.info("endorse {} alt block".format(lastblock - 6))
@@ -132,6 +131,6 @@ class PopE2E(BitcoinTestFramework):
         self.apm = MockMiner()
 
         self._test_case()
-
+       
 if __name__ == '__main__':
     PopE2E().main()

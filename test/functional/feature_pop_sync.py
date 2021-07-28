@@ -9,7 +9,7 @@
 Test with multiple nodes, and multiple PoP endorsements, checking to make sure nodes stay in sync.
 """
 
-from test_framework.pop import KEYSTONE_INTERVAL, endorse_block, sync_pop_mempools, mine_until_pop_enabled
+from test_framework.pop import endorse_block, sync_pop_mempools, mine_until_pop_active, get_keystone_interval
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -29,7 +29,7 @@ class PoPSync(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
@@ -38,12 +38,13 @@ class PoPSync(BitcoinTestFramework):
     def _check_pop_sync(self):
         self.log.info("running _check_pop_sync()")
         height = self.nodes[0].getblockcount()
+        topheight = height + 52
         addr0 = self.nodes[0].getnewaddress()
         addr1 = self.nodes[1].getnewaddress()
         addr2 = self.nodes[2].getnewaddress()
-        heightlast = height + 52
+        keystoneInterval = get_keystone_interval(self.nodes[0])
 
-        while height < heightlast:
+        while height < topheight:
             self.nodes[0].generate(nblocks=1)
             # endorse every block
             self.nodes[2].waitforblockheight(height)
@@ -51,7 +52,7 @@ class PoPSync(BitcoinTestFramework):
             node2_txid = endorse_block(self.nodes[2], self.apm, height, addr2)
 
             # endorse each keystone
-            if height % KEYSTONE_INTERVAL == 0:
+            if height % keystoneInterval == 0:
                 self.nodes[0].waitforblockheight(height)
                 self.log.info("node0 endorsing block {} by miner {}".format(height, addr0))
                 node0_txid = endorse_block(self.nodes[0], self.apm, height, addr0)
@@ -84,7 +85,8 @@ class PoPSync(BitcoinTestFramework):
 
     def assert_atvs_in_node(self, node, containingblockhash, expected):
         block = node.getblock(containingblockhash)
-        atvs = block['pop']['state']['stored']['atvs']
+        atvs = block['pop']['data']['atvs']
+
         for atv in expected:
             assert atv in atvs, "containing block {} does not contain ATV {}".format(containingblockhash, atv)
 

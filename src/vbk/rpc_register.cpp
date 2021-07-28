@@ -268,17 +268,6 @@ UniValue submitpopvbk(const Config &config, const JSONRPCRequest &request) {
     return submitpopIt<altintegration::VbkBlock>(request);
 }
 
-using VbkTree = altintegration::VbkBlockTree;
-using BtcTree = altintegration::VbkBlockTree::BtcTree;
-
-static VbkTree &vbk() {
-    return VeriBlock::GetPop().getAltBlockTree().vbk();
-}
-
-static BtcTree &btc() {
-    return VeriBlock::GetPop().getAltBlockTree().btc();
-}
-
 // getblock
 namespace {
 
@@ -333,10 +322,10 @@ namespace {
     }
 
     UniValue getvbkblock(const Config &config, const JSONRPCRequest &req) {
-        return getblock(req, vbk(), "vbk");
+        return getblock(req, VeriBlock::GetPop().getAltBlockTree().vbk(), "vbk");
     }
     UniValue getbtcblock(const Config &config, const JSONRPCRequest &req) {
-        return getblock(req, btc(), "btc");
+        return getblock(req, VeriBlock::GetPop().getAltBlockTree().btc(), "btc");
     }
 
 } // namespace
@@ -375,12 +364,12 @@ namespace {
 
     UniValue getvbkbestblockhash(const Config &config,
                                  const JSONRPCRequest &request) {
-        return getbestblockhash(request, vbk(), "vbk");
+        return getbestblockhash(request, VeriBlock::GetPop().getAltBlockTree().vbk(), "vbk");
     }
 
     UniValue getbtcbestblockhash(const Config &config,
                                  const JSONRPCRequest &request) {
-        return getbestblockhash(request, btc(), "btc");
+        return getbestblockhash(request, VeriBlock::GetPop().getAltBlockTree().btc(), "btc");
     }
 } // namespace
 
@@ -438,11 +427,11 @@ namespace {
 
     UniValue getvbkblockhash(const Config &config,
                              const JSONRPCRequest &request) {
-        return getblockhash(request, vbk(), "vbk");
+        return getblockhash(request, VeriBlock::GetPop().getAltBlockTree().vbk(), "vbk");
     }
     UniValue getbtcblockhash(const Config &config,
                              const JSONRPCRequest &request) {
-        return getblockhash(request, btc(), "btc");
+        return getblockhash(request, VeriBlock::GetPop().getAltBlockTree().btc(), "btc");
     }
 
 } // namespace
@@ -696,8 +685,8 @@ UniValue getpopparams(const Config &config, const JSONRPCRequest &req) {
     auto &pop_config = VeriBlock::GetPop().getConfig();
     auto ret = altintegration::ToJSON<UniValue>(*pop_config.alt);
 
-    auto *vbkfirst = vbk().getBestChain().first();
-    auto *btcfirst = btc().getBestChain().first();
+    auto *vbkfirst = VeriBlock::GetPop().getAltBlockTree().vbk().getBestChain().first();
+    auto *btcfirst = VeriBlock::GetPop().getAltBlockTree().btc().getBestChain().first();
     assert(vbkfirst);
     assert(btcfirst);
 

@@ -10,43 +10,33 @@ from typing import Optional
 import logging
 
 from .messages import ser_uint256, hash256, uint256_from_str, hash256lr
-from .pop_const import KEYSTONE_INTERVAL, NETWORK_ID, POP_ACTIVATION_HEIGHT, POP_PAYOUT_DELAY, \
+from .pop_const import NETWORK_ID, POP_ACTIVATION_HEIGHT, POP_PAYOUT_DELAY, \
     EMPTY_POPDATA_ROOT_V1
 from .script import hash160, CScript, OP_DUP, OP_HASH160, OP_EQUALVERIFY, OP_CHECKSIG
 from .test_node import TestNode
 from .util import hex_str_to_bytes
 
 
-
-def isKeystone(height):
-    return height % KEYSTONE_INTERVAL == 0
-
-
-def getPreviousKeystoneHeight(height):
-    diff = height % KEYSTONE_INTERVAL
-    if diff == 0:
-        diff = KEYSTONE_INTERVAL
-    prevks = height - diff
-    return max(0, prevks)
+def getHighestKeystoneAtOrBefore(height: int, keystoneInterval: int):
+    assert height >= 0
+    diff = height % keystoneInterval
+    return height - diff
 
 
-def getKeystones(node, height):
-    zero = '00' * 32
-    if height == 0:
-        return [zero, zero]
+def getFirstPreviousKeystoneHeight(height: int, keystoneInterval: int):
+    if height <= 1:
+        return 0
 
-    prev1 = getPreviousKeystoneHeight(height)
-    a = node.getblockhash(prev1)
+    ret = getHighestKeystoneAtOrBefore((height - 2) if ((height - 1) % keystoneInterval) == 0 else (height - 1), keystoneInterval)
+    return 0 if ret < 0 else ret
 
-    assert prev1 >= 0
-    if prev1 == 0:
-        return [a, zero]
 
-    prev2 = getPreviousKeystoneHeight(prev1)
-    b = node.getblockhash(prev2)
+def getSecondPreviousKeystoneHeight(height: int, keystoneInterval: int):
+    if height <= 1 + keystoneInterval:
+        return 0
 
-    return [a, b]
-
+    ret = getFirstPreviousKeystoneHeight(height, keystoneInterval) - keystoneInterval
+    return 0 if ret < 0 else ret
 
 # size = size of chain to be created
 def create_endorsed_chain(node, apm, size: int, addr: str) -> None:
@@ -250,6 +240,9 @@ def mine_until_pop_enabled(node):
         node.generate(nblocks=(activate - existing))
         node.waitforblockheight(activate)
 
+def get_keystone_interval(node):
+    params = node.getpopparams()
+    return params['keystoneInterval']
 
 class BlockIndex:
     __slots__ = ("height", "hash", "prev")
@@ -272,7 +265,6 @@ def write_single_byte_len_value(val):
     # write value
     d += val
     return d
-
 
 class ContextInfoContainer:
     __slots__ = ("height", "keystone1", "keystone2")
@@ -301,6 +293,7 @@ class PopMiningContext:
         self.node = node
         self.params = node.getpopparams()
 
+        keystoneInterval = get_keystone_interval(node)
         bootstrap = self.params['bootstrapBlock']
         self.bootstrap = BlockIndex(
             height=bootstrap['height'],
@@ -324,7 +317,7 @@ class PopMiningContext:
                     )
                 )
 
-        test_config("KEYSTONE_INTERVAL", KEYSTONE_INTERVAL, lambda x: x["keystoneInterval"])
+        test_config("KEYSTONE_INTERVAL", keystoneInterval, lambda x: x["keystoneInterval"])
         test_config("NETWORK_ID", NETWORK_ID, lambda x: x["networkId"])
         test_config("POP_ACTIVATION_HEIGHT", POP_ACTIVATION_HEIGHT, lambda x: x["popActivationHeight"])
         test_config("POP_PAYOUT_DELAY", POP_PAYOUT_DELAY, lambda x: x["payoutParams"]["popPayoutDelay"])
@@ -378,9 +371,10 @@ class PopMiningContext:
         c.keystone2 = ""
         try:
             prev = self.get_block(prevHash)
+            keystoneInterval = get_keystone_interval(self.node)
             c.height = prev.height + 1
-            ks1height = getFirstPreviousKeystoneHeight(c.height)
-            ks2height = getSecondPreviousKeystoneHeight(c.height)
+            ks1height = getFirstPreviousKeystoneHeight(c.height, keystoneInterval)
+            ks2height = getSecondPreviousKeystoneHeight(c.height, keystoneInterval)
 
             ks1 = self._get_ancestor(prevHash, ks1height)
             if ks1:
@@ -429,3 +423,30 @@ def _calculateTopLevelMerkleRoot(
     txroot = ser_uint256(txRoot)
     stateRoot = hash256lr(txroot, popDataRoot)
     return uint256_from_str(hash256lr(stateRoot, ch))
+
+def mine_until_pop_enabled(node, address=None):
+    existing = node.getblockcount()
+    enabled = node.getpopparams()['bootstrapBlock']['height']
+    assert enabled >= 0, "POP security should be able to enable"
+    if existing < enabled:
+        assert enabled - existing < 2000, "POP security enables on height {}. Will take too long to enable".format(
+            enabled)
+        if address is None:
+            node.generate(nblocks=(enabled - existing))
+        else:
+            node.generatetoaddress(nblocks=(enabled - existing), address=address)
+        node.waitforblockheight(enabled)
+
+
+def mine_until_pop_active(node, address=None):
+    existing = node.getblockcount()
+    activate = node.getblockchaininfo()['softforks']['pop_security']['height']
+    assert activate >= 0, "POP security should be able to activate"
+    if existing < activate:
+        assert activate - existing < 2000, "POP security activates on height {}. Will take too long to activate".format(
+            activate)
+        if address is None:
+            node.generate(nblocks=(activate - existing))
+        else:
+            node.generatetoaddress(nblocks=(activate - existing), address=address)
+        node.waitforblockheight(activate)

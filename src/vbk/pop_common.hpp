@@ -27,6 +27,8 @@ GetAltBlockIndex(const uint256 &hash);
 altintegration::BlockIndex<altintegration::AltBlock> *
 GetAltBlockIndex(const CBlockIndex *index);
 
+bool isKeystone(const CBlockIndex& block);
+
 std::string toPrettyString(const altintegration::PopContext &pop);
 
 } // namespace VeriBlock

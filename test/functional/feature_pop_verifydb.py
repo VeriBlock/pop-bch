@@ -7,8 +7,8 @@
 
 import time
 
-from test_framework.pop import KEYSTONE_INTERVAL, endorse_block, sync_pop_mempools, create_endorsed_chain, \
-    assert_pop_state_equal, mine_until_pop_enabled
+from test_framework.pop import endorse_block, sync_pop_mempools, create_endorsed_chain, \
+    assert_pop_state_equal, mine_until_pop_active
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -37,11 +37,16 @@ class PoPVerifyDB(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
         self.sync_all()
+
+    # actual = node which restarted
+    # expected = node which not restarted
+    def verify_state(self, actual, expected):
+        self.sync_all([actual, expected], timeout=40)
 
     def run_test(self):
         """Main test logic"""
@@ -53,7 +58,7 @@ class PoPVerifyDB(BitcoinTestFramework):
 
         assert_pop_state_equal(self.nodes)
         create_endorsed_chain(self.nodes[0], self.apm, self.endorsed_length, self.addrs[0])
-        self.sync_all(self.nodes, timeout=60 * 5)
+        self.sync_all(self.nodes, timeout=60)
         assert_pop_state_equal(self.nodes)
 
         checkblocks = 0  # all blocks
@@ -64,8 +69,8 @@ class PoPVerifyDB(BitcoinTestFramework):
                 "-checkblocks={}".format(checkblocks),
                 "-checklevel={}".format(checklevel)
             ])
-            time.sleep(10)
-            self.sync_all(self.nodes, timeout=60 * 5)
+            connect_nodes(self.nodes[0], self.nodes[1])
+            self.sync_all(self.nodes, timeout=120)
             assert_pop_state_equal(self.nodes)
             self.log.info("success")
 

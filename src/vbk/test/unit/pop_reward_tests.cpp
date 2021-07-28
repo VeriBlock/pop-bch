@@ -7,12 +7,12 @@
 #include <script/interpreter.h>
 #include <vbk/test/util/e2e_fixture.hpp>
 
-struct PopRewardsTestFixture : public E2eFixture {};
+struct PopRewardTestFixture : public E2eFixture {};
 
-BOOST_AUTO_TEST_SUITE(pop_rewards_tests)
+BOOST_AUTO_TEST_SUITE(pop_reward_tests)
 
 BOOST_FIXTURE_TEST_CASE(addPopPayoutsIntoCoinbaseTx_test,
-                        PopRewardsTestFixture) {
+                        PopRewardTestFixture) {
     CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey())
                                      << OP_CHECKSIG;
 

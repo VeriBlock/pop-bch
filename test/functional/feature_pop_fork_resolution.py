@@ -7,21 +7,21 @@
 
 """
 Start 4 nodes.
-Stop node[3] at 0 blocks.
+Stop node[3] at 200 blocks.
 Mine 103 blocks on node0.
 Disconnect node[2].
-node[2] mines 97 blocks, total height is 200 (fork B)
-node[0] mines 10 blocks, total height is 113 (fork A)
-node[0] endorses block 113 (fork A tip).
-node[0] mines pop tx in block 114 (fork A tip)
+node[2] mines 97 blocks, total height is 400 (fork B)
+node[0] mines 10 blocks, total height is 313 (fork A)
+node[0] endorses block 313 (fork A tip).
+node[0] mines pop tx in block 314 (fork A tip)
 node[0] mines 9 more blocks
 node[2] is connected to nodes[0,1]
 node[3] started with 0 blocks.
 
-After sync has been completed, expect all nodes to be on same height (fork A, block 123)
+After sync has been completed, expect all nodes to be on same height (fork A, block 323)
 """
 
-from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_enabled
+from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_active, get_keystone_interval
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -42,12 +42,13 @@ class PopFr(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         # all nodes connected and synced
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
         self.sync_all()
+        self.keystoneInterval = get_keystone_interval(self.nodes[0])
 
     def get_best_block(self, node):
         hash = node.getbestblockhash()
@@ -59,29 +60,29 @@ class PopFr(BitcoinTestFramework):
 
         # stop node3
         self.stop_node(3)
-        self.log.info("node3 stopped with block height 0")
+        self.log.info("node3 stopped with block height %d", lastblock)
 
-        # all nodes start with 103 blocks
+        # all nodes start with lastblock + 103 blocks
         self.nodes[0].generate(nblocks=103)
         self.log.info("node0 mined 103 blocks")
         self.sync_blocks([self.nodes[0], self.nodes[1], self.nodes[2]], timeout=20)
         assert self.get_best_block(self.nodes[0])['height'] == lastblock + 103
         assert self.get_best_block(self.nodes[1])['height'] == lastblock + 103
         assert self.get_best_block(self.nodes[2])['height'] == lastblock + 103
-        self.log.info("nodes[0,1,2] are synced at block {}".format(lastblock + 103))
+        self.log.info("nodes[0,1,2] synced are at block %d", lastblock + 103)
 
         # node2 is disconnected from others
         disconnect_nodes(self.nodes[2], self.nodes[0])
         disconnect_nodes(self.nodes[2], self.nodes[1])
         self.log.info("node2 is disconnected")
 
-        # node2 mines another 97 blocks, so total height is 200
+        # node2 mines another 97 blocks, so total height is lastblock + 200
         self.nodes[2].generate(nblocks=97)
 
-        # fork A is at 103
-        # fork B is at 200
+        # fork A is at 303 (lastblock = 200)
+        # fork B is at 400
         self.nodes[2].waitforblockheight(lastblock + 200)
-        self.log.info("node2 mined 97 more blocks, total height is {}".format(lastblock + 200))
+        self.log.info("node2 mined 97 more blocks, total height is %d", lastblock + 200)
 
         bestblocks = [self.get_best_block(x) for x in self.nodes[0:3]]
 
@@ -89,19 +90,21 @@ class PopFr(BitcoinTestFramework):
         assert bestblocks[0] == bestblocks[1], "node[0,1] have different best hashes: {} vs {}".format(bestblocks[0],
                                                                                                        bestblocks[1])
 
-        # mine 10 more blocks to fork A
-        self.nodes[0].generate(nblocks=10)
+        # mine a keystone interval of blocks to fork A
+        self.nodes[0].generate(nblocks=self.keystoneInterval)
         self.sync_all(self.nodes[0:2])
-        self.log.info("nodes[0,1] are in sync and are at fork A (%d...%d blocks)", lastblock + 103, lastblock + 113)
+        self.log.info("nodes[0,1] are in sync and are at fork A (%d...%d blocks)", lastblock + 103, lastblock + 103 + self.keystoneInterval)
 
         # fork B is at 400
         assert bestblocks[2]['height'] == lastblock + 200, "unexpected tip: {}".format(bestblocks[2])
         self.log.info("node2 is at fork B (%d...%d blocks)", lastblock + 103, lastblock + 200)
 
-        # endorse block 313 (fork A tip)
+        assert 200 > 103 + self.keystoneInterval + 10, "keystone interval is set too high"
+
+        # endorse block 303 + keystone interval (fork A tip)
         addr0 = self.nodes[0].getnewaddress()
-        txid = endorse_block(self.nodes[0], self.apm, lastblock + 113, addr0)
-        self.log.info("node0 endorsed block {} (fork A tip)".format(lastblock + 113))
+        txid = endorse_block(self.nodes[0], self.apm, lastblock + 103 + self.keystoneInterval, addr0)
+        self.log.info("node0 endorsed block %d (fork A tip)", lastblock + 103 + self.keystoneInterval)
         # mine pop tx on node0
         containinghash = self.nodes[0].generate(nblocks=10)
         self.log.info("node0 mines 10 more blocks")
@@ -111,7 +114,7 @@ class PopFr(BitcoinTestFramework):
         assert_equal(self.nodes[1].getblock(containinghash[0])['hash'], containingblock['hash'])
 
         tip = self.get_best_block(self.nodes[0])
-        assert txid in containingblock['pop']['state']['stored']['atvs'], "pop tx is not in containing block"
+        assert txid in containingblock['pop']['data']['atvs'], "pop tx is not in containing block"
         self.sync_blocks(self.nodes[0:2])
         self.log.info("nodes[0,1] are in sync, pop tx containing block is {}".format(containingblock['height']))
         self.log.info("node0 tip is {}".format(tip['height']))
@@ -167,7 +170,7 @@ class PopFr(BitcoinTestFramework):
             addr = node.getnewaddress()
             create_endorsed_chain(node, self.apm, toMine, addr)
 
-        # all nodes have different tips at height 223
+        # all nodes have different tips at height 303 + keystone interval
         bestblocks = [self.get_best_block(x) for x in self.nodes]
         for b in bestblocks:
             assert b['height'] == lastblock + toMine

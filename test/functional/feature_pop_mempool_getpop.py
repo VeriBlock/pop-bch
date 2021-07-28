@@ -9,7 +9,7 @@
 Feature POP popdata max size test
 
 """
-from test_framework.pop import mine_vbk_blocks, endorse_block, mine_until_pop_enabled
+from test_framework.pop import mine_vbk_blocks, endorse_block, mine_until_pop_active
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -27,7 +27,7 @@ class PopPayouts(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
 
         connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_all(self.nodes)
@@ -41,17 +41,17 @@ class PopPayouts(BitcoinTestFramework):
         containingblockhash = self.nodes[0].generate(nblocks=1)[0]
         containingblock = self.nodes[0].getblock(containingblockhash)
 
-        assert len(containingblock['pop']['state']['stored']['vbkblocks']) == payloads_amount == len(vbk_blocks)
+        assert len(containingblock['pop']['data']['vbkblocks']) == payloads_amount == len(vbk_blocks)
 
         self.log.info("success! _test_case_vbk()")
 
     def _test_case_atv(self, payloads_amount):
         self.log.info("running _test_case_vbk()")
 
-        # endorse block 5
-        addr = self.nodes[0].getnewaddress()
+        # endorse block lastblock - 5
         lastblock = self.nodes[0].getblockcount()
         assert lastblock >= 5
+        addr = self.nodes[0].getnewaddress()
         for i in range(payloads_amount):
             self.log.info("endorsing block {} on node0 by miner {}".format(lastblock - 5, addr))
             endorse_block(self.nodes[0], self.apm, lastblock - 5, addr)
@@ -60,7 +60,7 @@ class PopPayouts(BitcoinTestFramework):
         containingblockhash = self.nodes[0].generate(nblocks=1)[0]
         containingblock = self.nodes[0].getblock(containingblockhash)
 
-        assert len(containingblock['pop']['state']['stored']['atvs']) == payloads_amount
+        assert len(containingblock['pop']['data']['atvs']) == payloads_amount
 
         self.log.info("success! _test_case_atv()")
 

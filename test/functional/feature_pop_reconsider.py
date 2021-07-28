@@ -18,12 +18,11 @@ Reconsider block 101.
 Ensure shorter fork wins and new tip is block 120.
 """
 
-from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_enabled
+from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_active
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     wait_until,
-    connect_nodes,
-    disconnect_nodes, assert_equal,
+    assert_equal,
 )
 
 
@@ -39,7 +38,7 @@ class PopReconsider(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+        mine_until_pop_active(self.nodes[0])
         self.sync_all()
 
     def get_best_block(self, node):
@@ -71,7 +70,7 @@ class PopReconsider(BitcoinTestFramework):
         containingblock = self.nodes[0].getblock(self.chainAtiphash)
 
         tip = self.get_best_block(self.nodes[0])
-        assert txid in containingblock['pop']['state']['stored']['atvs'], "pop tx is not in containing block"
+        assert txid in containingblock['pop']['data']['atvs'], "pop tx is not in containing block"
         self.log.info("node tip is {}".format(tip['height']))
 
         self.chainAtiphash = self.nodes[0].generate(nblocks=19)[-1]

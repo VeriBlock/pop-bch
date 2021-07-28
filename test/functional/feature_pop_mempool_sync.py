@@ -9,7 +9,7 @@
 Test with multiple nodes, and multiple PoP endorsements, checking to make sure nodes stay in sync.
 """
 
-from test_framework.pop import endorse_block, mine_until_pop_enabled
+from test_framework.pop import endorse_block, mine_until_pop_active
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -28,11 +28,12 @@ class PoPMempoolSync(BitcoinTestFramework):
 
     def setup_network(self):
         self.setup_nodes()
-        mine_until_pop_enabled(self.nodes[0])
+
+        mine_until_pop_active(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
             connect_nodes(self.nodes[i + 1], self.nodes[i])
-        self.sync_all()
+            self.sync_all()
 
     def run_test(self):
         """Main test logic"""
@@ -41,12 +42,12 @@ class PoPMempoolSync(BitcoinTestFramework):
 
         from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
-        self.nodes[0].generate(nblocks=10)
 
         addr0 = self.nodes[0].getnewaddress()
-        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
         self.log.info("node0 endorses block 5")
         self.nodes[0].generate(nblocks=10)
+
+        tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
         atvid = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr0)
 
         self.sync_pop_mempools(self.nodes, timeout=20)
@@ -70,8 +71,6 @@ class PoPMempoolSync(BitcoinTestFramework):
 
         rawpopmempool1 = self.nodes[1].getrawpopmempool()
         assert atvid in rawpopmempool1['atvs']
-
-
 
 
 if __name__ == '__main__':
