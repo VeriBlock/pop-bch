@@ -30,13 +30,14 @@ static UniValue CallRPC(std::string args)
     boost::split(vArgs, args, boost::is_any_of(" \t"));
     std::string strMethod = vArgs[0];
     vArgs.erase(vArgs.begin());
+    GlobalConfig config;
     JSONRPCRequest request;
     request.strMethod = strMethod;
     request.params = RPCConvertValues(strMethod, vArgs);
     request.fHelp = false;
     if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
     try {
-        UniValue result = tableRPC.execute(request);
+        UniValue result = tableRPC.execute(config, request);
         return result;
     } catch (const UniValue& objError) {
         throw std::runtime_error(find_value(objError, "message").get_str());
@@ -48,7 +49,7 @@ BOOST_AUTO_TEST_SUITE(rpc_service_tests)
 BOOST_FIXTURE_TEST_CASE(getpopdata_test, E2eFixture)
 {
     for (size_t i = 0; i < 20; ++i) {
-        CreateAndProcessBlock({}, ChainActive().Tip()->GetBlockHash(), cbKey);
+        CreateAndProcessBlock({}, cbKey);
     }
 
     int blockHeight = ChainActive().Tip()->nHeight - 5;
@@ -70,7 +71,7 @@ BOOST_FIXTURE_TEST_CASE(getpopdata_test, E2eFixture)
     authedContext.toVbkEncoding(w);
 
     UniValue result;
-    BOOST_CHECK_NO_THROW(result = CallRPC("getpopdatabyheight " + std::to_string(blockHeight)));
+    BOOST_CHECK_NO_THROW(result = CallRPC(std::string("getpopdatabyheight ") + std::to_string(blockHeight)));
 
     auto blockContext = find_value(result.get_obj(), "authenticated_context").get_obj();
 
@@ -158,14 +159,14 @@ BOOST_FIXTURE_TEST_CASE(getblock_finalized_test, E2eFixture)
     auto settlementInterval = VeriBlock::GetPop().getAltBlockTree().getParams().preserveBlocksBehindFinal();
 
     for (size_t i = 0; i < (finalityDistance + settlementInterval + 5); ++i) {
-        CreateAndProcessBlock({}, ChainActive().Tip()->GetBlockHash(), cbKey);
+        CreateAndProcessBlock({}, cbKey);
     }
 
     auto blockhash = CallRPC(std::string("getblockhash ") + "1");
     auto blockBeforeFinalization = CallRPC(std::string("getblock ") + blockhash.get_str());
 
     ::ChainstateActive().ForceFlushStateToDisk();
-    CreateAndProcessBlock({}, ChainActive().Tip()->GetBlockHash(), cbKey);
+    CreateAndProcessBlock({}, cbKey);
 
     blockhash = CallRPC(std::string("getblockhash ") + "1");
     UniValue blockAfterFinalization;

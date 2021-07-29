@@ -154,7 +154,7 @@ class VBchNode(Node):
             height=s['height'],
             prevhash=s.get('previousblockhash', ''),
             confirmations=s['confirmations'],
-            endorsedBy=s['pop']['state']['endorsedBy'],
+            endorsedBy=s['pop']['state']['endorsedBy'] if s['pop']['state'] else [],
             blockOfProofEndorsements=[],
             containingATVs=s['pop']['state']['stored']['atvs'],
             containingVTBs=s['pop']['state']['stored']['vtbs'],
@@ -229,7 +229,8 @@ class VBchNode(Node):
             endorsementSettlementInterval=s['endorsementSettlementInterval'],
             finalityDelay=s['finalityDelay'],
             keystoneInterval=s['keystoneInterval'],
-            maxAltchainFutureBlockTime=s['maxAltchainFutureBlockTime']
+            maxAltchainFutureBlockTime=s['maxAltchainFutureBlockTime'],
+            maxReorgDistance=s['maxReorgDistance']
         )
 
     def getrawatv(self, atvid: Hexstr) -> AtvResponse:

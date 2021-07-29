@@ -27,12 +27,12 @@ bool AltChainParamsVBCH::checkBlockHeader(const std::vector<uint8_t>& bytes, con
 
         /* top level merkle `root` calculated by library is same as in endorsed header */
         auto actual = header.hashMerkleRoot.asVector();
-        if(actual != root) {
+        if (actual != root) {
             return state.Invalid("bad-merkle-root", strprintf("Expected %s, got %s", HexStr(root), HexStr(actual)));
         }
 
         /* and POW of endorsed header is valid */
-        if(!CheckProofOfWork(header.GetHash(), header.nBits, params.GetConsensus())) {
+        if (!CheckProofOfWork(header.GetHash(), header.nBits, params.GetConsensus())) {
             return state.Invalid("bad-pow", "Bad proof of work");
         }
 
@@ -107,10 +107,10 @@ void selectPopConfig(const std::string& network)
         popconfig.setBTC(0, {}, btcparam);
         auto vbkparam = std::make_shared<altintegration::VbkChainParamsRegTest>();
         popconfig.setVBK(0, {}, vbkparam);
-        auto altparam = std::make_shared<VeriBlock::AltChainParamsVBCH>(Params().GenesisBlock());
+        auto altparam = std::make_shared<VeriBlock::AltChainParamsVBCHRegTest>(Params().GenesisBlock());
         popconfig.alt = altparam;
     } else {
-        throw std::invalid_argument("currently only supports poptestnet/regtest");
+        throw std::invalid_argument("currently only supports test/regtest");
     }
 
     VeriBlock::SetPopConfig(popconfig);

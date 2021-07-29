@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef INTEGRATION_REFERENCE_BTC_VBTC_PARAMS_HPP
-#define INTEGRATION_REFERENCE_BTC_VBTC_PARAMS_HPP
+#ifndef INTEGRATION_REFERENCE_BTC_VBCH_PARAMS_HPP
+#define INTEGRATION_REFERENCE_BTC_VBCH_PARAMS_HPP
 
 #include <primitives/block.h>
 #include <veriblock/pop.hpp>
@@ -16,6 +16,7 @@ namespace VeriBlock {
 
 struct AltChainParamsVBCH : public altintegration::AltChainParams {
     ~AltChainParamsVBCH() override = default;
+    AltChainParamsVBCH() = default;
 
     AltChainParamsVBCH(const CBlock& genesis)
     {
@@ -43,9 +44,19 @@ struct AltChainParamsVBCH : public altintegration::AltChainParams {
     // - check that 'root' is equal to Merkle Root in CBlockHeader
     bool checkBlockHeader(
         const std::vector<uint8_t>& bytes,
-        const std::vector<uint8_t>& root, altintegration::ValidationState& state) const noexcept override;
+        const std::vector<uint8_t>& root,
+        altintegration::ValidationState& state) const noexcept override;
 
     altintegration::AltBlock bootstrap;
+};
+
+struct AltChainParamsVBCHRegTest : public AltChainParamsVBCH {
+    ~AltChainParamsVBCHRegTest() = default;
+
+    AltChainParamsVBCHRegTest(const CBlock& genesis) : AltChainParamsVBCH(genesis)
+    {
+        mMaxReorgDistance = 1000;
+    }
 };
 
 void printConfig(const altintegration::Config& config);
@@ -53,4 +64,4 @@ void selectPopConfig(const std::string& network = "test");
 
 } // namespace VeriBlock
 
-#endif //INTEGRATION_REFERENCE_BTC_VBTC_PARAMS_HPP
+#endif //INTEGRATION_REFERENCE_BTC_VBCH_PARAMS_HPP
