@@ -110,7 +110,7 @@ void selectPopConfig(const std::string& network)
         auto altparam = std::make_shared<VeriBlock::AltChainParamsVBCHRegTest>(Params().GenesisBlock());
         popconfig.alt = altparam;
     } else {
-        throw std::invalid_argument("currently only supports test/regtest");
+        throw std::invalid_argument("currently only supports poptestnet/regtest");
     }
 
     VeriBlock::SetPopConfig(popconfig);
