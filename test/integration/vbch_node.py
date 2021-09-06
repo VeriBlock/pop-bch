@@ -156,9 +156,9 @@ class VBchNode(Node):
             confirmations=s['confirmations'],
             endorsedBy=s['pop']['state']['endorsedBy'] if s['pop']['state'] else [],
             blockOfProofEndorsements=[],
-            containingATVs=s['pop']['state']['stored']['atvs'],
-            containingVTBs=s['pop']['state']['stored']['vtbs'],
-            containingVBKs=s['pop']['state']['stored']['vbkblocks']
+            containingATVs=s['pop']['data']['atvs'],
+            containingVTBs=s['pop']['data']['vtbs'],
+            containingVBKs=s['pop']['data']['vbkblocks']
         )
 
     def getblockcount(self) -> int:

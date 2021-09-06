@@ -158,7 +158,11 @@ PoPRewards getPopRewards(const CBlockIndex &pindexPrev,
     (void)ret;
     assert(ret);
 
-    auto rewards = pop.getPopPayout(prevHash);
+    altintegration::PopPayouts rewards;
+    ret = pop.getPopPayout(prevHash, rewards, state);
+    (void)ret;
+    assert(ret);
+
     int halving = (pindexPrev.nHeight + 1) /
                   params.GetConsensus().nSubsidyHalvingInterval;
     PoPRewards result{};
