@@ -972,6 +972,9 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex,
         m_failed_blocks.insert(pindex);
         setDirtyBlockIndex.insert(pindex);
         setBlockIndexCandidates.erase(pindex);
+        if(pindex->pprev != nullptr) {
+            setBlockIndexCandidates.insert(pindex->pprev);
+        }
         InvalidChainFound(pindex);
     }
 }
@@ -3724,6 +3727,14 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                              REJECT_INVALID, "bad-block-pop-version",
                              "POP bit is NOT set, and pop data is NOT empty");
+    }
+
+    if(block.nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
+        // run stateless validation on PopData
+        altintegration::ValidationState vs;
+        if(!VeriBlock::GetPop().check(block.popData, vs)) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID, "bad-block-pop-" + vs.GetPath(), vs.GetDebugMessage());
+        }
     }
 
     // All potential-corruption validation must be done before we do any

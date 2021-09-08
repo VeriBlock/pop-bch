@@ -18,7 +18,7 @@ struct AltChainParamsVBCH : public altintegration::AltChainParams {
     ~AltChainParamsVBCH() override = default;
     AltChainParamsVBCH() = default;
 
-    AltChainParamsVBCH(const CBlock& genesis)
+    explicit AltChainParamsVBCH(const CBlock& genesis)
     {
         bootstrap.hash = genesis.GetHash().asVector();
         // intentionally leave prevHash empty
@@ -51,9 +51,9 @@ struct AltChainParamsVBCH : public altintegration::AltChainParams {
 };
 
 struct AltChainParamsVBCHRegTest : public AltChainParamsVBCH {
-    ~AltChainParamsVBCHRegTest() = default;
+    ~AltChainParamsVBCHRegTest() override = default;
 
-    AltChainParamsVBCHRegTest(const CBlock& genesis) : AltChainParamsVBCH(genesis)
+    explicit AltChainParamsVBCHRegTest(const CBlock& genesis) : AltChainParamsVBCH(genesis)
     {
         mMaxReorgDistance = 1000;
     }
