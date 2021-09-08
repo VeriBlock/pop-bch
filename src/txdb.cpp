@@ -251,7 +251,7 @@ bool CBlockTreeDB::WriteBatchSync(
                     CDiskBlockIndex(*it));
     }
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         // write BTC/VBK/ALT blocks
         VeriBlock::saveTrees(&batch);
     }

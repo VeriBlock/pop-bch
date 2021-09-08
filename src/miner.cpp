@@ -165,12 +165,11 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
     // VeriBlock: add PopData into the block
-    if (VeriBlock::isPopEnabled() && chainParams.isPopActive(nHeight)) {
+    if (VeriBlock::isPopActive(nHeight)) {
         pblock->popData = VeriBlock::generatePopData();
-    }
-
-    if (!pblock->popData.empty()) {
-        pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
+        if (!pblock->popData.empty()) {
+            pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
+        }
     }
 
     if (IsMagneticAnomalyEnabled(consensusParams, pindexPrev)) {
@@ -204,7 +203,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     // VeriBlock add pop rewards
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isPopActive(nHeight)) {
         VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev, chainParams);
     }
 

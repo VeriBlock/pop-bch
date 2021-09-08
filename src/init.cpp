@@ -2819,7 +2819,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
         },
         DUMP_BANS_INTERVAL);
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         auto &pop = VeriBlock::GetPop();
         auto *tip = ChainActive().Tip();
         altintegration::ValidationState state;

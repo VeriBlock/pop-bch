@@ -790,7 +790,7 @@ Amount GetBlockSubsidy(int nHeight, const CChainParams& params) {
     Amount nSubsidy = 50 * COIN;
     // Subsidy is cut in half every 210,000 blocks which will occur
     // approximately every 4 years.
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isPopActive(nHeight)) {
         nSubsidy = VeriBlock::getCoinbaseSubsidy(nSubsidy, nHeight, params);
     }
 
@@ -964,7 +964,7 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex,
                                     const BlockValidationState &state) {
     if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
         pindex->nStatus = pindex->nStatus.withFailed();
-        if (VeriBlock::isPopEnabled()) {
+        if (VeriBlock::isCrossedBootstrapBlock()) {
             VeriBlock::GetPop()
                     .getAltBlockTree()
                     .invalidateSubtree(pindex->GetBlockHash().asVector(), altintegration::BLOCK_FAILED_BLOCK);
@@ -1350,7 +1350,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
     }
 
     AssertLockHeld(cs_main);
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         altintegration::ValidationState state;
         VeriBlock::setState(block.hashPrevBlock, state);
     }
@@ -1843,7 +1843,7 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, blockReward, state)) {
         return false;
     }
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         altintegration::ValidationState _state;
         if (!VeriBlock::setState(pindex->GetBlockHash(), _state)) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID, "bad-block-pop",
@@ -2112,13 +2112,13 @@ EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
         g_best_block_cv.notify_all();
     }
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         altintegration::ValidationState state;
         bool ret = VeriBlock::setState(pindexNew->GetBlockHash(), state);
         assert(ret && "block has been checked previously and should be valid");
     }
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isPopActive()) {
         auto& pop = VeriBlock::GetPop();
         auto* vbktip = pop.getAltBlockTree().vbk().getBestChain().tip();
         auto* btctip = pop.getAltBlockTree().btc().getBestChain().tip();
@@ -2213,7 +2213,7 @@ bool CChainState::DisconnectTip(const CChainParams &params,
     }
 
     // VeriBlock
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isPopActive()) {
         VeriBlock::addDisconnectedPopdata(block.popData);
     }
 
@@ -2497,7 +2497,7 @@ bool CChainState::ConnectTip(const Config &config, BlockValidationState &state,
     }
 
     // VeriBlock: remove from pop_mempool
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isPopActive(pindexNew->nHeight)) {
         VeriBlock::removePayloadsFromMempool(blockConnecting.popData);
     }
 
@@ -2579,7 +2579,7 @@ CBlockIndex *CChainState::FindBestChain() {
 
         int popComparisonResult = 0;
 
-        if (VeriBlock::isPopEnabled() && Params().isPopActive(bestCandidate->nHeight)) {
+        if (VeriBlock::isPopActive(bestCandidate->nHeight)) {
             popComparisonResult = VeriBlock::compareForks(*bestCandidate, *pindexNew);
         } else {
             popComparisonResult = CBlockIndexWorkComparator()(bestCandidate, pindexNew) ? -1 : 1;
@@ -2950,7 +2950,7 @@ bool CChainState::ActivateBestChain(const Config &config,
                 // Destructed before cs_main is unlocked
                 ConnectTrace connectTrace(g_mempool);
 
-                if (VeriBlock::isPopEnabled()) {
+                if (VeriBlock::isPopActive()) {
                     if (pblock && pindexBestChain == nullptr) {
                         auto *blockindex = LookupBlockIndex(pblock->GetHash());
                         assert(blockindex);
@@ -3431,7 +3431,7 @@ void CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
         pindexFinalized = LastCommonAncestor(pindex, pindexFinalized);
     }
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         auto blockHash = pindex->GetBlockHash().asVector();
         VeriBlock::GetPop().getAltBlockTree().revalidateSubtree(blockHash, altintegration::BLOCK_FAILED_BLOCK, false);
     }
@@ -4146,7 +4146,7 @@ bool CChainState::AcceptBlockHeader(const Config &config,
 
     CheckBlockIndex(chainparams.GetConsensus());
 
-    if (VeriBlock::isPopEnabled(pindex->nHeight)) {
+    if (VeriBlock::isCrossedBootstrapBlock(pindex->nHeight)) {
         if (!VeriBlock::acceptBlock(*pindex, state)) {
             return error(
                 "%s: ALT tree could not accept block ALT:%d:%s, reason: %s",
@@ -4328,7 +4328,7 @@ bool CChainState::AcceptBlock(const Config &config,
                      block.GetHash().ToString());
     }
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         if (!VeriBlock::addAllBlockPayloads(block, state)) {
             return state.Invalid(
                 BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
@@ -4467,7 +4467,7 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
 
     bool shouldRemove = false;
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         // VeriBlock: Block that have been passed to TestBlockValidity may not exist
         // in alt tree, because technically it was not created ("mined"). in this
         // case, add it and then remove
@@ -4492,7 +4492,7 @@ bool TestBlockValidity(BlockValidationState &state, const CChainParams &params,
 
     assert(state.IsValid());
 
-    if (VeriBlock::isPopEnabled()) {
+    if (VeriBlock::isCrossedBootstrapBlock()) {
         if (shouldRemove) {
             auto &tree = VeriBlock::GetPop().getAltBlockTree();
             auto _hash = block_hash.asVector();
@@ -5322,7 +5322,7 @@ bool CChainState::LoadGenesisBlock(const CChainParams &chainparams) {
         }
         CBlockIndex *pindex = AddToBlockIndex(block);
 
-        if (VeriBlock::isPopEnabled()) {
+        if (VeriBlock::isCrossedBootstrapBlock()) {
             BlockValidationState state;
             if (!VeriBlock::acceptBlock(*pindex, state)) {
                 printf("LoadGenesisBlock() cant load genesis block to the "
