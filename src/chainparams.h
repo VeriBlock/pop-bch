@@ -99,7 +99,6 @@ public:
         return height >= consensus.VeriBlockPopSecurityHeight;
     }
     uint32_t PopRewardPercentage() const { return mPopRewardPercentage; }
-    int32_t PopRewardCoefficient() const { return mPopRewardCoefficient; }
 
 protected:
     CChainParams() {}
@@ -126,9 +125,7 @@ protected:
 
     // VeriBlock:
     // cut this % from coinbase subsidy
-    uint32_t mPopRewardPercentage = 40; // %
-    // every pop reward will be multiplied by this coefficient
-    int32_t mPopRewardCoefficient = 20;
+    uint32_t mPopRewardPercentage = 50; // %
 };
 
 /**

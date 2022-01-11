@@ -1550,7 +1550,7 @@ void InitLogging() {
 
     LogInstance().EnableCategory(BCLog::POP);
 
-    std::string poplogverbosity = gArgs.GetArg("-poplogverbosity", "warn");
+    std::string poplogverbosity = gArgs.GetArg("-poplogverbosity", "error");
     altintegration::SetLogger<VeriBlock::VBCHLogger>();
     altintegration::GetLogger().level = altintegration::StringToLevel(poplogverbosity);
 

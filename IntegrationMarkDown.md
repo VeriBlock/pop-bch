@@ -4152,7 +4152,7 @@ So, generally main parts of the PoP protocol have been implemented. At this stag
 Just add into the new rpc_registry.hpp/cpp source files.\
 [<font style="color: red">vbk/rpc_registry.hpp</font>]
 ```
-// Copyright (c) 2019-2020 Xenios SEZC
+// Copyright (c) 2019-2021 Xenios SEZC
 // https://www.veriblock.org
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
