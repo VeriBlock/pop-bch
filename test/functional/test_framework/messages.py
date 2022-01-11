@@ -254,7 +254,10 @@ class CInv:
         0: "Error",
         1: "TX",
         2: "Block",
-        4: "CompactBlock"
+        4: "CompactBlock",
+        8: "ATV",
+        9: "VTB",
+        10: "VBK",
     }
 
     def __init__(self, t=0, h=0):

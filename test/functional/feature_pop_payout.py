@@ -18,7 +18,7 @@ Expected balance is POW_PAYOUT * 10 + pop payout. (node0 has only 10 mature coin
 """
 
 from test_framework.pop import endorse_block, mine_until_pop_active
-from test_framework.pop_const import POW_PAYOUT, POP_PAYOUT_DELAY
+from test_framework.pop_const import POP_PAYOUT_DELAY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes,
@@ -39,14 +39,11 @@ class PopPayouts(BitcoinTestFramework):
         self.setup_nodes()
         mine_until_pop_active(self.nodes[0])
 
-        connect_nodes(self.nodes[0], self.nodes[1])
+        connect_nodes(self.nodes[0], 1)
         self.sync_all(self.nodes)
 
     def _case1_endorse_keystone_get_paid(self):
         self.log.warning("running _case1_endorse_keystone_get_paid()")
-
-        # endorse block 5
-        addr = self.nodes[0].getnewaddress()
         lastblock = self.nodes[0].getblockcount()
         self.nodes[0].generate(nblocks=10)
         self.nodes[0].waitforblockheight(lastblock + 10)
@@ -74,7 +71,7 @@ class PopPayouts(BitcoinTestFramework):
         # assert that txid exists in this block
         block = self.nodes[0].getblock(containingblockhash)
 
-        assert atv_id in block['pop']['state']['stored']['atvs']
+        assert atv_id in block['pop']['data']['atvs']
 
         # target height is lastblock - 5 + POP_PAYOUT_DELAY
         self.target_payout_block = self.endorsed_height + POP_PAYOUT_DELAY
@@ -84,6 +81,7 @@ class PopPayouts(BitcoinTestFramework):
             self.target_payout_block
         ))
         payoutblockhash = self.nodes[1].generate(nblocks=n)[-1]
+        balance1 = self.nodes[0].getbalance()
         self.sync_blocks(self.nodes)
         self.log.info("pop rewards paid")
 
@@ -92,10 +90,18 @@ class PopPayouts(BitcoinTestFramework):
         coinbasetxhash = block['tx'][0]
         coinbasetx = self.nodes[0].getrawtransaction(coinbasetxhash, 1)
         outputs = coinbasetx['vout']
-        assert len(outputs) > 1, "block with payout does not contain pop payout: {}".format(outputs)
+        assert len(outputs) > 2, "block with payout does not contain pop payout: {}".format(outputs)
         assert outputs[1]['n'] == 1
         assert outputs[1]['value'] > 0, "expected non-zero output at n=1, got: {}".format(outputs[1])
 
+        # mine 100 blocks and check balance
+        self.nodes[0].generate(nblocks=100)
+        balance = self.nodes[0].getbalance()
+
+        # node[0] has 210 (lastblock) mature coinbases and a single pop payout
+        assert lastblock == 210, "calculation below are only valid for POP activation height = 210"
+        pop_payout = float(outputs[1]['value'])
+        assert float(balance) == float(balance1) + float(pop_payout)
         self.log.warning("success! _case1_endorse_keystone_get_paid()")
 
     def run_test(self):

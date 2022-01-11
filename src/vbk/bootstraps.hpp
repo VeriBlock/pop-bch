@@ -21,6 +21,12 @@ extern const std::vector<std::string> testnetVBKblocks;
 extern const int testnetBTCstartHeight;
 extern const std::vector<std::string> testnetBTCblocks;
 
+extern const int mainnetVBKstartHeight;
+extern const std::vector<std::string> mainnetVBKblocks;
+
+extern const int mainnetBTCstartHeight;
+extern const std::vector<std::string> mainnetBTCblocks;
+
 } // namespace VeriBlock
 
 #endif

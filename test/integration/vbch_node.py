@@ -216,8 +216,6 @@ class VBchNode(Node):
 
         return PopParamsResponse(
             popActivationHeight=s['popActivationHeight'],
-            popRewardPercentage=s['popRewardPercentage'],
-            popRewardCoefficient=s['popRewardCoefficient'],
             popPayoutDelay=s['payoutParams']['popPayoutDelay'],
             bootstrapBlock=bootstrap,
             vbkBootstrap=vbkBootstrap,

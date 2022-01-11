@@ -135,21 +135,6 @@ BOOST_FIXTURE_TEST_CASE(extractblockinfo_test, E2eFixture)
     BOOST_CHECK_EQUAL(result[0]["secondPreviousKeystone"].get_str(), uint256(container.keystones.secondPreviousKeystone).GetHex());
 }
 
-BOOST_FIXTURE_TEST_CASE(setmempooldostalledcheck_test, E2eFixture)
-{
-    {
-        LOCK(cs_main);
-        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(), true);
-    }
-
-    BOOST_CHECK_NO_THROW(CallRPC("setmempooldostalledcheck false"));
-
-    {
-        LOCK(cs_main);
-        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(), false);
-    }
-}
-
 BOOST_FIXTURE_TEST_CASE(getblock_finalized_test, E2eFixture)
 {
     auto* tip = ChainActive().Tip();
@@ -173,6 +158,54 @@ BOOST_FIXTURE_TEST_CASE(getblock_finalized_test, E2eFixture)
     BOOST_CHECK_NO_THROW(blockAfterFinalization = CallRPC(std::string("getblock ") + blockhash.get_str()));
 
     BOOST_CHECK_NE(blockBeforeFinalization.write(), blockAfterFinalization.write());
+}
+
+BOOST_FIXTURE_TEST_CASE(extractblockinfo_inavlid_test, E2eFixture)
+{
+    CBlock block;
+    bool read = ReadBlockFromDisk(block, ChainActive().Tip(), Params().GetConsensus());
+    assert(read && "expected to read endorsed block from disk");
+
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+    stream << ChainActive().Tip()->GetBlockHeader();
+    std::vector<uint8_t> header{stream.begin(), stream.end()};
+
+    altintegration::ContextInfoContainer container;
+    container.height = 100;
+    container.keystones.firstPreviousKeystone.resize(33);
+    container.keystones.secondPreviousKeystone.resize(32);
+
+    altintegration::PublicationData pubData{};
+    pubData.identifier = 1000;
+    pubData.header = header;
+    auto serializedContext = altintegration::SerializeToVbkEncoding(container);
+    pubData.contextInfo = serializedContext;
+
+    auto result = CallRPC(std::string("extractblockinfo [\"") + altintegration::SerializeToHex(pubData) + "\"]");
+    BOOST_CHECK_NE(find_value(result, "code").get_int64(), 0);
+
+    container.keystones.firstPreviousKeystone.resize(32);
+    container.keystones.secondPreviousKeystone.resize(33);
+
+    serializedContext = altintegration::SerializeToVbkEncoding(container);
+    pubData.contextInfo = serializedContext;
+
+    result = CallRPC(std::string("extractblockinfo [\"") + altintegration::SerializeToHex(pubData) + "\"]");
+    BOOST_CHECK_NE(find_value(result, "code").get_int64(), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(getpopscorestats_test, E2eFixture)
+{
+    auto result = CallRPC(std::string("getpopscorestats"));
+    auto stats = find_value(result.get_obj(), "stats").get_obj();
+    auto comparisons = find_value(stats, "popScoreComparisons").get_int64();
+    CreateAndProcessBlock({}, ChainActive().Tip()->GetBlockHash(), cbKey);
+
+    result = CallRPC(std::string("getpopscorestats"));
+    stats = find_value(result.get_obj(), "stats").get_obj();
+    auto comparisons_after = find_value(stats, "popScoreComparisons").get_int64();
+
+    BOOST_CHECK_EQUAL(comparisons + 1, comparisons_after);
 }
 
 

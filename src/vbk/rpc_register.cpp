@@ -233,10 +233,14 @@ template <typename Pop> UniValue submitpopIt(const JSONRPCRequest &request) {
     LOCK(cs_main);
     auto &mp = VeriBlock::GetPop().getMemPool();
     auto idhex = data.getId().toHex();
-    auto result = mp.submit<Pop>(data, state, false);
+    auto result = mp.submit<Pop>(data, state);
     logSubmitResult<Pop>(idhex, result, state);
 
     bool accepted = result.isAccepted();
+    if (accepted) {
+        // relay this pop payload
+        p2p::RelayPopPayload<Pop>(g_rpc_node->connman.get(), data);
+    }
     return altintegration::ToJSON<UniValue>(state, &accepted);
 }
 
@@ -428,15 +432,60 @@ namespace {
             cmdname,
             "\nReturns the list of VBK blocks, ATVs and VTBs stored in POP "
             "mempool.\n",
-            {},
+            {
+                {"verbosity", RPCArg::Type::NUM, /* default */ "0", "0 for lists of ids, 1 for lists of entities, 2 for validity status"},
+            },
             RPCResult{"TODO"},
             RPCExamples{HelpExampleCli(cmdname, "") +
                         HelpExampleRpc(cmdname, "")},
         }
             .Check(request);
 
+        int verbosity = 0;
+        if (!request.params[0].isNull()) {
+            verbosity = request.params[0].get_int();
+        }
+
         auto &mp = VeriBlock::GetPop().getMemPool();
-        return altintegration::ToJSON<UniValue>(mp);
+
+        if (verbosity == 0) {
+            return altintegration::ToJSON<UniValue>(mp, false);
+        } else if (verbosity == 1) {
+            return altintegration::ToJSON<UniValue>(mp, true);
+        } else {
+            // returns pairs {"id": "...", "state": {...validation state...}} in order
+            // that would have been used for POW mining.
+            UniValue result(UniValue::VOBJ);
+            UniValue atvs(UniValue::VARR);
+            UniValue vtbs(UniValue::VARR);
+            UniValue vbkblocks(UniValue::VARR);
+
+            // intentionally ignore return value
+            mp.generatePopData(
+                [&](const altintegration::ATV& p, const altintegration::ValidationState& state) {
+                    UniValue j(UniValue::VOBJ);
+                    j.pushKV("id", altintegration::HexStr(p.getId()));
+                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
+                    atvs.push_back(j);
+                },
+                [&](const altintegration::VTB& p, const altintegration::ValidationState& state) {
+                    UniValue j(UniValue::VOBJ);
+                    j.pushKV("id", altintegration::HexStr(p.getId()));
+                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
+                    vtbs.push_back(j);
+                },
+                [&](const altintegration::VbkBlock& p, const altintegration::ValidationState& state) {
+                    UniValue j(UniValue::VOBJ);
+                    j.pushKV("id", altintegration::HexStr(p.getId()));
+                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
+                    vbkblocks.push_back(j);
+                });
+
+            result.pushKV("atvs", atvs);
+            result.pushKV("vtbs", vtbs);
+            result.pushKV("vbkblocks", vbkblocks);
+            return result;
+        }
     }
 
 } // namespace
@@ -488,10 +537,12 @@ namespace {
         std::transform(containing.begin(), containing.end(),
                        std::back_inserter(containingBlocks),
                        [](const decltype(*containing.begin()) &blockHash) {
+                           assert(blockHash.size() == uint256().size() && "unexpected containing block hash size in the payloads index");
                            return BlockHash(uint256(blockHash));
                        });
 
         for (const auto &blockHash : containing) {
+            assert(blockHash.size() == uint256().size() && "unexpected containing block hash size in the payloads index");
             auto *index = LookupBlockIndex(BlockHash(uint256(blockHash)));
             assert(index && "state and index mismatch");
 
@@ -687,8 +738,6 @@ UniValue getpopparams(const Config &config, const JSONRPCRequest &req) {
 
     ret.pushKV("popActivationHeight",
                Params().GetConsensus().VeriBlockPopSecurityHeight);
-    ret.pushKV("popRewardPercentage", (int64_t)Params().PopRewardPercentage());
-    ret.pushKV("popRewardCoefficient", Params().PopRewardCoefficient());
 
     return ret;
 }
@@ -750,6 +799,13 @@ UniValue extractblockinfo(const Config &, const JSONRPCRequest &req) {
                     "can not deserialize ContextInfoContainer err: " +
                         state.toString());
             }
+
+            if (container.keystones.firstPreviousKeystone.size() != uint256().size()) {
+                return JSONRPCError(RPC_INVALID_PARAMETER, "can not deserialize ContextInfoContainer err: unexpected firstPreviousKeystone size");
+            }
+            if (container.keystones.secondPreviousKeystone.size() != uint256().size()) {
+                return JSONRPCError(RPC_INVALID_PARAMETER, "can not deserialize ContextInfoContainer err: unexpected secondPreviousKeystone size");
+            }
         }
 
         UniValue val(UniValue::VOBJ);
@@ -767,29 +823,30 @@ UniValue extractblockinfo(const Config &, const JSONRPCRequest &req) {
     return res;
 }
 
-UniValue setmempooldostalledcheck(const Config &, const JSONRPCRequest &req) {
+UniValue getpopscorestats(const JSONRPCRequest& req)
+{
+    std::string cmdname = "getpopscorestats";
+    // clang-format off
     RPCHelpMan{
-        "setmempooldostalledcheck",
-        "set the mempool dostalledcheck flag",
-        {
-            {"flag", RPCArg::Type::BOOL, RPCArg::Optional::NO, "flag"},
-        },
+        cmdname,
+        "\nReturns POP-related fork resolution statistics.\n",
         {},
-        RPCExamples{HelpExampleCli("setmempooldostalledcheck", "\"flag\"") +
-                    HelpExampleRpc("setmempooldostalledcheck", "\"flag\"")},
+        RPCResult{"TODO"},
+        RPCExamples{
+            HelpExampleCli(cmdname, "") +
+            HelpExampleRpc(cmdname, "")},
     }
         .Check(req);
+    // clang-format on
 
-    EnsurePopEnabled();
-
+    auto ret = UniValue(UniValue::VOBJ);
+    UniValue stats(UniValue::VOBJ);
     {
         LOCK(cs_main);
-
-        bool flag = req.params[0].get_bool();
-        VeriBlock::GetPop().getMemPool().setDoStalledCheck(flag);
+        stats.pushKV("popScoreComparisons", getPopScoreComparisons());
     }
-
-    return UniValue{};
+    ret.pushKV("stats", stats);
+    return ret;
 }
 
 const CRPCCommand commands[] = {
@@ -808,9 +865,9 @@ const CRPCCommand commands[] = {
     {"pop_mining", "getrawatv", getrawatv, {"id"}},
     {"pop_mining", "getrawvtb", getrawvtb, {"id"}},
     {"pop_mining", "getrawvbkblock", getrawvbkblock, {"id"}},
-    {"pop_mining", "getrawpopmempool", &getrawpopmempool, {}},
-    {"pop_mining", "setmempooldostalledcheck", &setmempooldostalledcheck, {"flag"}},
-    {"pop_mining", "extractblockinfo", &extractblockinfo, {"data_array"}}};
+    {"pop_mining", "getrawpopmempool", &getrawpopmempool, {"verbosity"}},
+    {"pop_mining", "extractblockinfo", &extractblockinfo, {"data_array"}},
+    {"pop_mining", "getpopscorestats", &getpopscorestats, {}}};
 
 void RegisterPOPMiningRPCCommands(CRPCTable &t) {
     for (const auto &command : VeriBlock::commands) {
