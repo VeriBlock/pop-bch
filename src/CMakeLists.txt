@@ -482,7 +482,8 @@ endif()
 
 # Bitcoin server facilities
 add_library(server
-	vbk/bootstraps.cpp
+	vbk/bootstraps-testnet.cpp
+	vbk/bootstraps-mainnet.cpp
 	vbk/merkle.cpp
 	vbk/params.cpp
 	vbk/pop_service.cpp

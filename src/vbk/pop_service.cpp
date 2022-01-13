@@ -10,6 +10,7 @@
 #include <dbwrapper.h>
 #include <limits>
 #include <shutdown.h>
+#include <txdb.h>
 #include <validation.h>
 #include <vbk/adaptors/payloads_provider.hpp>
 #include <veriblock/pop.hpp>
@@ -30,7 +31,6 @@
 namespace VeriBlock {
 
 static uint64_t popScoreComparisons = 0ULL;
-
 template <typename T>
 void onAcceptedToMempool(const T& t) {
     assert(g_rpc_node);
@@ -174,8 +174,8 @@ PoPRewards getPopRewards(const CBlockIndex& tip, const CChainParams& params) EXC
         arith_uint256 coeff(r.second);
         // 50% of multiplier towards POP.
         // we divide by COIN here because `coeff` is X * COIN, Multiplier is Y*COIN.
-        // so payout becomes = X*Y*COIN*COIN/2. 
-        arith_uint256 payout = (coeff * VeriBlock::GetSubsidyMultiplier(tip.nHeight + 1, params) / 2) / COIN;
+        // so payout becomes = X*Y*COIN*COIN/2.
+        arith_uint256 payout = coeff * arith_uint256((VeriBlock::GetSubsidyMultiplier(tip.nHeight + 1, params) / 2) / COIN);
         if(payout > 0) {
             CScript key = CScript(r.first.begin(), r.first.end());
             assert(payout <= std::numeric_limits<int64_t>::max() && "overflow!");
@@ -194,23 +194,23 @@ void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIn
     for (const auto& itr : rewards) {
         CTxOut out;
         out.scriptPubKey = itr.first;
-        out.nValue = itr.second;
+        out.nValue = itr.second * COIN;
         coinbaseTx.vout.push_back(out);
     }
 }
 
-bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const CAmount& nFees, const CBlockIndex& pindex, const CChainParams& params, BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const Amount& nFees, const CBlockIndex& pindex, const CChainParams& params, BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     AssertLockHeld(cs_main);
     PoPRewards expectedRewards = getPopRewards(*pindex.pprev, params);
-    CAmount nTotalPopReward = 0;
+    Amount nTotalPopReward = Amount::zero();
 
     if (tx.vout.size() < expectedRewards.size()) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID, "bad-pop-vouts-size",
             strprintf("checkCoinbaseTxWithPopRewards(): coinbase has incorrect size of pop vouts (actual vouts size=%d vs expected vouts=%d)", tx.vout.size(), expectedRewards.size()));
     }
 
-    std::map<CScript, CAmount> cbpayouts;
+    std::map<CScript, Amount> cbpayouts;
     // skip first reward, as it is always PoW payout
     for (auto out = tx.vout.begin() + 1, end = tx.vout.end(); out != end; ++out) {
         // pop payouts can not be null
@@ -223,7 +223,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const CAmount& nFees,
     // skip first (regular pow) payout, and last 2 0-value payouts
     for (const auto& payout : expectedRewards) {
         auto& script = payout.first;
-        auto& expectedAmount = payout.second;
+        auto expectedAmount = payout.second * COIN;
 
         auto p = cbpayouts.find(script);
         // coinbase pays correct reward?
@@ -250,7 +250,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const CAmount& nFees,
         nTotalPopReward += expectedAmount;
     }
 
-    CAmount PoWBlockReward = GetBlockSubsidy(pindex.nHeight, params);
+    Amount PoWBlockReward = GetBlockSubsidy(pindex.nHeight, params);
 
     if (tx.GetValueOut() > nTotalPopReward + PoWBlockReward + nFees) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, REJECT_INVALID,
@@ -383,17 +383,17 @@ uint64_t getPopScoreComparisons() EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 }
 
 
-CAmount GetSubsidyMultiplier(int nHeight, const CChainParams& params) {
+Amount GetSubsidyMultiplier(int nHeight, const CChainParams& params) {
     // Offset halvings by the initial "non-halving" emissions which last 4183200 blocks
     int halvings = (nHeight - 4183200) / params.GetConsensus().nSubsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
     if (halvings >= 64)
-        return 0;
+        return 0 * COIN;
 
     // If none of the switches below are hit, this value will be used (which is the value
     // for the first halving period (so halvings=0)
-    CAmount nSubsidy = 1504471080 * COIN / 1000000000;
-    
+    Amount nSubsidy = 1504471080 * COIN / 1000000000;
+
     if (nHeight < 64800) {
         nSubsidy = 7 * COIN; // First period, reward = 7.00
     } else if (nHeight < 136800) {
@@ -426,7 +426,7 @@ CAmount GetSubsidyMultiplier(int nHeight, const CChainParams& params) {
 
     // Subsidy is cut in half every 1,051,200 blocks which will occur approximately every 4 years.
     if (halvings > 0) {
-    	nSubsidy >>= halvings;
+        nSubsidy = ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
     }
 
     return nSubsidy;

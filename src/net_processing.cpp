@@ -3040,9 +3040,9 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
             AssertLockHeld(cs_main);
             assert(pfrom != nullptr);
             CNodeState* nodestate = State(pfrom->GetId());
-            nodestate->m_tx_download.m_tx_announced.erase(inv.hash);
-            nodestate->m_tx_download.m_tx_in_flight.erase(inv.hash);
-            EraseTxRequest(inv.hash);
+            nodestate->m_tx_download.m_tx_announced.erase(TxId{inv.hash});
+            nodestate->m_tx_download.m_tx_in_flight.erase(TxId{inv.hash});
+            EraseTxRequest(TxId{inv.hash});
         };
 
         if (strCommand == NetMsgType::POPATV) {
@@ -5186,7 +5186,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
            tx_process_time.begin()->first <= current_time &&
            state.m_tx_download.m_tx_in_flight.size() < MAX_PEER_TX_IN_FLIGHT) {
         auto& pair = tx_process_time.begin()->second;
-        const TxId txid = pair.first;
+        const TxId txid = TxId{pair.first};
         const uint32_t typeIn = pair.second;
         // Erase this entry from tx_process_time (it may be added back for
         // processing at a later time, see below)

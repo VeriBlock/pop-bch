@@ -5,6 +5,7 @@
 #include <serialize.h>
 #include <util/validation.h>
 #include <validation.h>
+#include <vbk/p2p_sync.hpp>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h> // for CWallet
 
@@ -823,7 +824,7 @@ UniValue extractblockinfo(const Config &, const JSONRPCRequest &req) {
     return res;
 }
 
-UniValue getpopscorestats(const JSONRPCRequest& req)
+UniValue getpopscorestats(const Config &, const JSONRPCRequest &req)
 {
     std::string cmdname = "getpopscorestats";
     // clang-format off
@@ -865,9 +866,9 @@ const CRPCCommand commands[] = {
     {"pop_mining", "getrawatv", getrawatv, {"id"}},
     {"pop_mining", "getrawvtb", getrawvtb, {"id"}},
     {"pop_mining", "getrawvbkblock", getrawvbkblock, {"id"}},
-    {"pop_mining", "getrawpopmempool", &getrawpopmempool, {"verbosity"}},
-    {"pop_mining", "extractblockinfo", &extractblockinfo, {"data_array"}},
-    {"pop_mining", "getpopscorestats", &getpopscorestats, {}}};
+    {"pop_mining", "getrawpopmempool", getrawpopmempool, {"verbosity"}},
+    {"pop_mining", "extractblockinfo", extractblockinfo, {"data_array"}},
+    {"pop_mining", "getpopscorestats", getpopscorestats, {}}};
 
 void RegisterPOPMiningRPCCommands(CRPCTable &t) {
     for (const auto &command : VeriBlock::commands) {

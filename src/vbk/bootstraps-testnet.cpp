@@ -3,9 +3,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "bootstraps.h"
+#include "bootstraps.hpp"
 
-
+namespace VeriBlock {
 
 const int testnetVBKstartHeight=2135791;
 const int testnetBTCstartHeight=2104692;
@@ -4051,3 +4051,4 @@ const std::vector<std::string> testnetVBKblocks = {
 "00209ECE0002CFFD1ED2AFAC65DEDB4F7EAE3DACB509482081BFDC2E3A815B7DF303C261CA71F47C64A58AE4DCF5607518B55B8661B25C43040ABF6E00037932AD",
 };
 
+} // namespace VeriBlock

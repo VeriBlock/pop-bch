@@ -24,7 +24,7 @@ struct Params;
 namespace VeriBlock {
 
 using BlockBytes = std::vector<uint8_t>;
-using PoPRewards = std::map<CScript, CAmount>;
+using PoPRewards = std::map<CScript, int64_t>;
 
 void InitPopContext(CDBWrapper& db);
 
@@ -36,7 +36,7 @@ bool setState(const uint256& block, altintegration::ValidationState& state);
 
 PoPRewards getPopRewards(const CBlockIndex& pindexPrev, const CChainParams& params);
 void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIndex& pindexPrev, const CChainParams& params);
-bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const CAmount& nFees, const CBlockIndex& pindex, const CChainParams& params, BlockValidationState& state);
+bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const Amount& nFees, const CBlockIndex& pindex, const CChainParams& params, BlockValidationState& state);
 
 std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks);
 std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks);
@@ -61,7 +61,7 @@ bool isPopActive(int32_t height);
 // get stats on POP score comparisons
 uint64_t getPopScoreComparisons();
 
-CAmount GetSubsidyMultiplier(int nHeight, const CChainParams& params);
+Amount GetSubsidyMultiplier(int nHeight, const CChainParams& params);
 
 } // namespace VeriBlock
 

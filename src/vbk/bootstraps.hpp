@@ -9,10 +9,6 @@
 #include <string>
 #include <vector>
 
-#include <primitives/block.h>
-#include <util/system.h> // for gArgs
-#include <veriblock/pop.hpp>
-
 namespace VeriBlock {
 
 extern const int testnetVBKstartHeight;
@@ -29,4 +25,4 @@ extern const std::vector<std::string> mainnetBTCblocks;
 
 } // namespace VeriBlock
 
-#endif
+#endif //__BOOTSTRAPS_BTC_VBK

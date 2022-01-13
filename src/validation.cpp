@@ -1575,7 +1575,7 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
         // VeriBlock: make coinbase spendable
         assert(block.vtx.size() == 1);
         const CTransaction& tx = *(block.vtx[0]);
-        UpdateCoins(tx, view, pindex->nHeight);
+        UpdateCoins(view, tx, pindex->nHeight);
         if (!fJustCheck) {
             view.SetBestBlock(pindex->GetBlockHash());
         }
@@ -1841,12 +1841,9 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
              nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
     // VeriBlock add pop rewards validation
-    Amount blockReward = GetBlockSubsidy(pindex->pprev->nHeight, params);
-    blockReward += nFees;
-
     assert(pindex->pprev && "previous block ptr is nullptr");
     if (VeriBlock::isCrossedBootstrapBlock()) {
-        if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, blockReward, state)) {
+        if (!VeriBlock::checkCoinbaseTxWithPopRewards(*block.vtx[0], nFees, *pindex, params, state)) {
             return false;
         }
         altintegration::ValidationState _state;
@@ -1860,6 +1857,8 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
     const std::vector<CTxDestination> whitelist =
         GetMinerFundWhitelist(consensusParams, pindex->pprev);
     if (!whitelist.empty()) {
+        Amount blockReward = GetBlockSubsidy(pindex->pprev->nHeight, params);
+        blockReward += nFees;
         const Amount required = GetMinerFundAmount(blockReward);
 
         for (auto &o : block.vtx[0]->vout) {
