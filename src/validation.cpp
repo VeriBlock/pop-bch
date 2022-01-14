@@ -1292,7 +1292,16 @@ DisconnectResult CChainState::DisconnectBlock(const CBlock &block,
         return DisconnectResult::FAILED;
     }
 
-    return ApplyBlockUndo(blockUndo, block, pindex, view);
+    DisconnectResult result = ApplyBlockUndo(blockUndo, block, pindex, view);
+    if (result != DisconnectResult::FAILED) {
+        AssertLockHeld(cs_main);
+        if (VeriBlock::isCrossedBootstrapBlock()) {
+            altintegration::ValidationState state;
+            bool ok = VeriBlock::setState(block.hashPrevBlock, state);
+            assert(ok);
+        }
+    }
+    return result;
 }
 
 DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
@@ -1348,13 +1357,6 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                 fClean = false;
             }
         }
-    }
-
-    AssertLockHeld(cs_main);
-    if (VeriBlock::isCrossedBootstrapBlock()) {
-        altintegration::ValidationState state;
-        bool ok = VeriBlock::setState(block.hashPrevBlock, state);
-        assert(ok);
     }
 
     // Move best block pointer to previous block.

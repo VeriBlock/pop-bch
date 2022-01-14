@@ -199,7 +199,7 @@ BOOST_FIXTURE_TEST_CASE(getpopscorestats_test, E2eFixture)
     auto result = CallRPC(std::string("getpopscorestats"));
     auto stats = find_value(result.get_obj(), "stats").get_obj();
     auto comparisons = find_value(stats, "popScoreComparisons").get_int64();
-    CreateAndProcessBlock({}, ChainActive().Tip()->GetBlockHash(), cbKey);
+    CreateAndProcessBlock({}, cbKey);
 
     result = CallRPC(std::string("getpopscorestats"));
     stats = find_value(result.get_obj(), "stats").get_obj();

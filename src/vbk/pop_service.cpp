@@ -194,7 +194,7 @@ void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIn
     for (const auto& itr : rewards) {
         CTxOut out;
         out.scriptPubKey = itr.first;
-        out.nValue = itr.second * COIN;
+        out.nValue = itr.second * Amount::satoshi();
         coinbaseTx.vout.push_back(out);
     }
 }
@@ -223,7 +223,7 @@ bool checkCoinbaseTxWithPopRewards(const CTransaction& tx, const Amount& nFees, 
     // skip first (regular pow) payout, and last 2 0-value payouts
     for (const auto& payout : expectedRewards) {
         auto& script = payout.first;
-        auto expectedAmount = payout.second * COIN;
+        auto expectedAmount = payout.second * Amount::satoshi();
 
         auto p = cbpayouts.find(script);
         // coinbase pays correct reward?
