@@ -32,7 +32,7 @@ class PoPSync(BitcoinTestFramework):
         mine_until_pop_active(self.nodes[0])
 
         for i in range(self.num_nodes - 1):
-            connect_nodes(self.nodes[i + 1], i)
+            connect_nodes(self.nodes[i + 1], self.nodes[i])
         self.sync_all()
 
     def _one_by_one(self):

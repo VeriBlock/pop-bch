@@ -30,7 +30,7 @@ class PopShutdownSync(BitcoinTestFramework):
 
         # all nodes connected and synced
         for i in range(self.num_nodes - 1):
-            connect_nodes(self.nodes[i + 1], i)
+            connect_nodes(self.nodes[i + 1], self.nodes[i])
         self.sync_all()
 
     def get_best_block(self, node):
@@ -45,14 +45,14 @@ class PopShutdownSync(BitcoinTestFramework):
         from pypoptools.pypopminer import MockMiner
         self.apm = MockMiner()
 
-        disconnect_nodes(self.nodes[0], 1)
+        disconnect_nodes(self.nodes[0], self.nodes[1])
         lastblock = self.nodes[1].getblockcount()
         self.nodes[1].generate(nblocks=1000)
         self.log.info("node1 disconnected and generating more blocks")
         self.nodes[1].waitforblockheight(lastblock + 1000)
         lastblock = self.nodes[1].getblockcount()
         self.log.info("node1 reached block height %d", lastblock)
-        connect_nodes(self.nodes[0], 1)
+        connect_nodes(self.nodes[0], self.nodes[1])
         self.log.info("node1 reconnected")
         time.sleep(1) # Sleep for 1 second to let headers sync
 
@@ -60,7 +60,7 @@ class PopShutdownSync(BitcoinTestFramework):
         self.stop_node(0)
         self.log.info("node0 stopped with block {}".format(lastblock))
         self.start_node(0)
-        connect_nodes(self.nodes[0], 1)
+        connect_nodes(self.nodes[0], self.nodes[1])
         self.log.info("node0 restarted")
         self.sync_all(self.nodes[0:2])
 

@@ -34,7 +34,7 @@ from .txtools import pad_tx
 from .test_node import TestNode
 from .util import assert_equal, satoshi_round
 from .pop import ContextInfoContainer, PopMiningContext, calculateTopLevelMerkleRoot
-from .pop_const import POW_PAYOUT
+from .pop_const import POW_PAYOUT, POP_ACTIVATION_HEIGHT, POW_REWARD_PERCENTAGE
 
 # Genesis block time (regtest)
 TIME_GENESIS_BLOCK = 1296688602
@@ -121,7 +121,10 @@ def create_coinbase(height, pubkey=None):
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff),
                               ser_string(serialize_script_num(height)), 0xffffffff))
     coinbaseoutput = CTxOut()
-    coinbaseoutput.nValue = 50 * COIN
+    coinbaseoutput.nValue = POW_PAYOUT * COIN
+    if height >= POP_ACTIVATION_HEIGHT:
+        coinbaseoutput.nValue = POW_PAYOUT * COIN
+        coinbaseoutput.nValue = int(coinbaseoutput.nValue * (100 - POW_REWARD_PERCENTAGE) / 100)
     halvings = int(height / 150)  # regtest
     coinbaseoutput.nValue >>= halvings
     if (pubkey is not None):

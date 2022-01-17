@@ -173,8 +173,6 @@ PoPRewards getPopRewards(const CBlockIndex& tip, const CChainParams& params) EXC
         // we use airth_uint256 to prevent any overflows
         arith_uint256 coeff(r.second);
         // 50% of multiplier towards POP.
-        // we divide by COIN here because `coeff` is X * COIN, Multiplier is Y*COIN.
-        // so payout becomes = X*Y*COIN*COIN/2.
         arith_uint256 payout = coeff * arith_uint256((VeriBlock::GetSubsidyMultiplier(tip.nHeight + 1, params) / 2) / COIN);
         if(payout > 0) {
             CScript key = CScript(r.first.begin(), r.first.end());
@@ -186,8 +184,7 @@ PoPRewards getPopRewards(const CBlockIndex& tip, const CChainParams& params) EXC
     return result;
 }
 
-void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIndex& pindexPrev, const CChainParams& params) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
-{
+void addPopPayoutsIntoCoinbaseTx(CMutableTransaction& coinbaseTx, const CBlockIndex& pindexPrev, const CChainParams& params) EXCLUSIVE_LOCKS_REQUIRED(cs_main){
     AssertLockHeld(cs_main);
     PoPRewards rewards = getPopRewards(pindexPrev, params);
     assert(coinbaseTx.vout.size() == 1 && "at this place we should have only PoW payout here");
@@ -384,52 +381,17 @@ uint64_t getPopScoreComparisons() EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 
 
 Amount GetSubsidyMultiplier(int nHeight, const CChainParams& params) {
-    // Offset halvings by the initial "non-halving" emissions which last 4183200 blocks
-    int halvings = (nHeight - 4183200) / params.GetConsensus().nSubsidyHalvingInterval;
+    ///HACK: same as GetBlockSubsidy()
+    int halvings = nHeight / params.GetConsensus().nSubsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64)
-        return 0 * COIN;
-
-    // If none of the switches below are hit, this value will be used (which is the value
-    // for the first halving period (so halvings=0)
-    Amount nSubsidy = 1504471080 * COIN / 1000000000;
-
-    if (nHeight < 64800) {
-        nSubsidy = 7 * COIN; // First period, reward = 7.00
-    } else if (nHeight < 136800) {
-        nSubsidy = 65 * COIN / 10; // Second period, reward = 6.50
-    } else if (nHeight < 223200) {
-        nSubsidy = 6 * COIN; // Third period, reward = 6.00
-    } else if (nHeight < 331200) {
-        nSubsidy = 575 * COIN / 100; // Fourth period, reward = 5.75
-    } else if (nHeight < 468000) {
-        nSubsidy = 55 * COIN / 10; // Fifth period, reward = 5.50
-    } else if (nHeight < 640800) {
-        nSubsidy = 525 * COIN / 100; // Sixth period, reward = 5.25
-    } else if (nHeight < 856800) {
-        nSubsidy = 5 * COIN; // Seventh period, reward = 5.00
-    } else if (nHeight < 1123200) {
-        nSubsidy = 475 * COIN / 100; // Eigth period, reward = 4.75
-    } else if (nHeight < 1447200) {
-        nSubsidy = 45 * COIN / 10; // Ninth period, reward = 4.50
-    } else if (nHeight < 1836000) {
-        nSubsidy = 425 * COIN / 100; // Tenth period, reward = 4.25
-    } else if (nHeight < 2296800) {
-        nSubsidy = 4 * COIN; // Eleventh period, reward = 4.00
-    } else if (nHeight < 2836800) {
-        nSubsidy = 375 * COIN / 100; // Twelfth period, reward = 3.75
-    } else if (nHeight < 3463200) {
-        nSubsidy = 35 * COIN / 10; // Thirteenth period, reward = 3.50
-    } else if (nHeight < 4183200) {
-        nSubsidy = 3 * COIN; // Fourteenth period, reward = 3.00
+    if (halvings >= 64) {
+        return Amount::zero();
     }
 
-    // Subsidy is cut in half every 1,051,200 blocks which will occur approximately every 4 years.
-    if (halvings > 0) {
-        nSubsidy = ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
-    }
-
-    return nSubsidy;
+    Amount nSubsidy = 50 * COIN;
+    // Subsidy is cut in half every 210,000 blocks which will occur
+    // approximately every 4 years.
+    return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
 }
 
 

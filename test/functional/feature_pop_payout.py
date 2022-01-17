@@ -39,7 +39,7 @@ class PopPayouts(BitcoinTestFramework):
         self.setup_nodes()
         mine_until_pop_active(self.nodes[0])
 
-        connect_nodes(self.nodes[0], 1)
+        connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_all(self.nodes)
 
     def _case1_endorse_keystone_get_paid(self):
@@ -71,7 +71,7 @@ class PopPayouts(BitcoinTestFramework):
         # assert that txid exists in this block
         block = self.nodes[0].getblock(containingblockhash)
 
-        assert atv_id in block['pop']['data']['atvs']
+        assert atv_id in block['pop']['state']['stored']['atvs']
 
         # target height is lastblock - 5 + POP_PAYOUT_DELAY
         self.target_payout_block = self.endorsed_height + POP_PAYOUT_DELAY
@@ -90,7 +90,7 @@ class PopPayouts(BitcoinTestFramework):
         coinbasetxhash = block['tx'][0]
         coinbasetx = self.nodes[0].getrawtransaction(coinbasetxhash, 1)
         outputs = coinbasetx['vout']
-        assert len(outputs) > 2, "block with payout does not contain pop payout: {}".format(outputs)
+        assert len(outputs) > 1, "block with payout does not contain pop payout: {}".format(outputs)
         assert outputs[1]['n'] == 1
         assert outputs[1]['value'] > 0, "expected non-zero output at n=1, got: {}".format(outputs[1])
 
@@ -101,7 +101,8 @@ class PopPayouts(BitcoinTestFramework):
         # node[0] has 210 (lastblock) mature coinbases and a single pop payout
         assert lastblock == 210, "calculation below are only valid for POP activation height = 210"
         pop_payout = float(outputs[1]['value'])
-        assert float(balance) == float(balance1) + float(pop_payout)
+        pow_payout = float(outputs[0]['value'])
+        assert float(balance) == float(balance1) + 99 * pow_payout + pop_payout
         self.log.warning("success! _case1_endorse_keystone_get_paid()")
 
     def run_test(self):

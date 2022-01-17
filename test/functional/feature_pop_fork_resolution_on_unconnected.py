@@ -144,7 +144,7 @@ class PopFrUnconnected(BitcoinTestFramework):
 
         compares_after = self.nodes[0].getpopscorestats()['stats']['popScoreComparisons']
         test_comparisons = compares_after - compares_before
-        assert test_comparisons == 1, "Expected {} comparisons, got {}".format(1, test_comparisons)
+        assert test_comparisons == 2, "Expected {} comparisons, got {}".format(2, test_comparisons)
         self.log.info("node0 made {} POP score comparisons".format(test_comparisons))
 
         self.log.warning("_find_best_chain_on_filling_gap_block() succeeded!")

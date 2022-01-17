@@ -61,8 +61,6 @@ class PopP2P(BitcoinTestFramework):
         self.setup_nodes()
 
         mine_until_pop_active(self.nodes[0])
-        connect_nodes(self.nodes[0], 1)
-        self.sync_all(self.nodes)
 
     def _run_sync_case(self):
         self.log.info("running _run_sync_case")

@@ -110,7 +110,7 @@ QString TransactionDesc::FormatBFIStatus(TransactionRecord *rec)
 
         QString input = QString::fromStdString(bfiendpoint + "/%1/chains/transactions/%2")
                             .arg(QString::number(VeriBlock::ALT_CHAIN_ID))
-                            .arg(rec->getTxHash());
+                            .arg(rec->getTxID());
         QUrl qurl = QUrl::fromUserInput(input);
         if (!qurl.isValid()) {
             return tr("URL is not valid. bfiendpoint=%s").arg(input);
