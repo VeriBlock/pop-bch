@@ -105,6 +105,7 @@ NON_SCRIPTS = [
     "p2p_unrequested_blocks.py",
     "wallet_resendwallettransactions.py",
     "example_test.py",
+    "feature_pop_spend_gb_coinbase.py",
     # VeriBlock
     # disable some bitcoin cash tests
     "abc-invalid-chains.py",

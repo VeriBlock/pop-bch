@@ -32,7 +32,7 @@ class SpendGenesisCoinbase(BitcoinTestFramework):
     def setup_network(self):
         self.setup_nodes()
         self.nodes[1].generate(nblocks=200)
-        connect_nodes(self.nodes[0], 1)
+        connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_all()
 
     def run_test(self):
