@@ -781,21 +781,13 @@ bool ReadBlockFromDisk(CBlock &block, const CBlockIndex *pindex,
 }
 
 Amount GetBlockSubsidy(int nHeight, const CChainParams& params) {
+    Amount nSubsidy = VeriBlock::GetSubsidyMultiplier(nHeight, params);
     if (VeriBlock::isPopActive(nHeight)) {
         // we cut 50% of POW payouts towards POP payouts
-        return VeriBlock::GetSubsidyMultiplier(nHeight, params) / 2;
+        return nSubsidy / 2;
     }
 
-    // if POP is not active, use original emissions curve. It is used in many tests.
-
-    int halvings = nHeight / params.GetConsensus().nSubsidyHalvingInterval;
-    // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64) {
-        return Amount::zero();
-    }
-
-    Amount nSubsidy = 50 * COIN;
-    return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
+    return nSubsidy;
 }
 
 // Note that though this is marked const, we may end up modifying
@@ -1572,12 +1564,9 @@ bool CChainState::ConnectBlock(const CBlock &block, BlockValidationState &state,
         pindex->pprev == nullptr ? BlockHash() : pindex->pprev->GetBlockHash();
     assert(hashPrevBlock == view.GetBestBlock());
 
-    // Special case for the genesis block
+    // Special case for the genesis block, skipping connection of its
+    // transactions (its coinbase is unspendable)
     if (block.GetHash() == consensusParams.hashGenesisBlock) {
-        // VeriBlock: make coinbase spendable
-        assert(block.vtx.size() == 1);
-        const CTransaction& tx = *(block.vtx[0]);
-        UpdateCoins(view, tx, pindex->nHeight);
         if (!fJustCheck) {
             view.SetBestBlock(pindex->GetBlockHash());
         }

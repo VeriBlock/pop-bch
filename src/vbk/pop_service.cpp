@@ -379,9 +379,9 @@ uint64_t getPopScoreComparisons() EXCLUSIVE_LOCKS_REQUIRED(cs_main)
     return popScoreComparisons;
 }
 
-
 Amount GetSubsidyMultiplier(int nHeight, const CChainParams& params) {
-    ///HACK: same as GetBlockSubsidy()
+    // Subsidy calculation has been moved here from GetBlockSubsidy()
+
     int halvings = nHeight / params.GetConsensus().nSubsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
     if (halvings >= 64) {
