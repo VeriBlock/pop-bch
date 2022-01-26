@@ -47,9 +47,9 @@ class PopShutdownSync(BitcoinTestFramework):
 
         disconnect_nodes(self.nodes[0], self.nodes[1])
         lastblock = self.nodes[1].getblockcount()
-        self.nodes[1].generate(nblocks=1000)
+        self.nodes[1].generate(nblocks=500)
         self.log.info("node1 disconnected and generating more blocks")
-        self.nodes[1].waitforblockheight(lastblock + 1000)
+        self.nodes[1].waitforblockheight(lastblock + 500)
         lastblock = self.nodes[1].getblockcount()
         self.log.info("node1 reached block height %d", lastblock)
         connect_nodes(self.nodes[0], self.nodes[1])
