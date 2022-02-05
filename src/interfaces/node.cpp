@@ -35,6 +35,7 @@
 #include <config/bitcoin-config.h>
 #endif
 
+#include <vbk/params.hpp>
 #include <univalue.h>
 
 class HTTPRPCRequestProcessor;
@@ -81,6 +82,7 @@ namespace {
         }
         void selectParams(const std::string &network) override {
             SelectParams(network);
+            VeriBlock::selectPopConfig(network);
         }
         uint64_t getAssumedBlockchainSize() override {
             return Params().AssumedBlockchainSize();

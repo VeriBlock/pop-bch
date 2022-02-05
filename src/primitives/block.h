@@ -10,6 +10,9 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <uint256.h>
+#include "vbk/vbk.hpp"
+
+#include <veriblock/pop.hpp>
 
 /**
  * Nodes collect new transactions into a block, hash them into a hash tree, and
@@ -63,6 +66,8 @@ class CBlock : public CBlockHeader {
 public:
     // network and disk
     std::vector<CTransactionRef> vtx;
+    // VeriBlock data
+    altintegration::PopData popData;
 
     // memory only
     mutable bool fChecked;
@@ -80,11 +85,17 @@ public:
     inline void SerializationOp(Stream &s, Operation ser_action) {
         READWRITEAS(CBlockHeader, *this);
         READWRITE(vtx);
+        if (this->nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
+            READWRITE(popData);
+        }
     }
 
     void SetNull() {
         CBlockHeader::SetNull();
         vtx.clear();
+        popData.context.clear();
+        popData.vtbs.clear();
+        popData.atvs.clear();
         fChecked = false;
     }
 

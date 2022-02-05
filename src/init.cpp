@@ -71,6 +71,9 @@
 #include <zmq/zmqrpc.h>
 #endif
 
+#include <vbk/log.hpp>
+#include <vbk/pop_service.hpp>
+
 #ifndef WIN32
 #include <attributes.h>
 #include <cerrno>
@@ -222,6 +225,7 @@ void Shutdown(NodeContext &node) {
     }
     threadGroup.interrupt_all();
     threadGroup.join_all();
+    VeriBlock::StopPop();
 
     // After the threads that potentially access these pointers have been
     // stopped, destruct and reset all to nullptr.
@@ -366,6 +370,11 @@ void SetupServerArgs() {
         "-uiplatform",
         // TODO remove after the November 2020 upgrade
         "-axionactivationtime"};
+
+    // VBK
+    gArgs.AddArg("-bfiendpoint", "Default end point for BFI setup.", ArgsManager::ALLOW_STRING, OptionsCategory::OPTIONS);
+    gArgs.AddArg("-poplogverbosity", "Verbosity for alt-cpp lib: debug/info/(warn)/error/off", ArgsManager::ALLOW_STRING, OptionsCategory::OPTIONS);
+    // VBK
 
     // Set all of the args and their help
     // When adding new options to the categories, please keep and ensure
@@ -1539,6 +1548,12 @@ void InitLogging() {
     LogInstance().m_log_threadnames =
         gArgs.GetBoolArg("-logthreadnames", DEFAULT_LOGTHREADNAMES);
 
+    LogInstance().EnableCategory(BCLog::POP);
+
+    std::string poplogverbosity = gArgs.GetArg("-poplogverbosity", "error");
+    altintegration::SetLogger<VeriBlock::VBCHLogger>();
+    altintegration::GetLogger().level = altintegration::StringToLevel(poplogverbosity);
+
     fLogIPs = gArgs.GetBoolArg("-logips", DEFAULT_LOGIPS);
 
     std::string version_string = FormatFullVersion();
@@ -2412,6 +2427,7 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                 pblocktree.reset();
                 pblocktree.reset(
                     new CBlockTreeDB(nBlockTreeDBCache, false, fReset));
+                VeriBlock::InitPopContext(*pblocktree);
 
                 if (fReset) {
                     pblocktree->WriteReindexing(true);
@@ -2802,6 +2818,24 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
             return true;
         },
         DUMP_BANS_INTERVAL);
+
+    if (VeriBlock::isCrossedBootstrapBlock()) {
+        auto &pop = VeriBlock::GetPop();
+        auto *tip = ChainActive().Tip();
+        altintegration::ValidationState state;
+        LOCK(cs_main);
+        bool ret = VeriBlock::setState(tip->GetBlockHash(), state);
+        auto *alttip = pop.getAltBlockTree().getBestChain().tip();
+        assert(ret && "bad state");
+        assert(tip->nHeight == alttip->getHeight());
+
+        LogPrintf("ALT tree best height = %d\n",
+                  pop.getAltBlockTree().getBestChain().tip()->getHeight());
+        LogPrintf("VBK tree best height = %d\n",
+                  pop.getAltBlockTree().vbk().getBestChain().tip()->getHeight());
+        LogPrintf("BTC tree best height = %d\n",
+                  pop.getAltBlockTree().btc().getBestChain().tip()->getHeight());
+    }
 
     // Start Avalanche's event loop.
     g_avalanche->startEventLoop(*node.scheduler);

@@ -181,12 +181,6 @@ static UniValue getrawtransaction(const Config &config,
     CBlockIndex *blockindex = nullptr;
 
     const CChainParams &params = config.GetChainParams();
-    if (txid == params.GenesisBlock().hashMerkleRoot) {
-        // Special exception for the genesis block coinbase transaction
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                           "The genesis block coinbase is not considered an "
-                           "ordinary transaction and cannot be retrieved");
-    }
 
     // Accept either a bool (true) or a num (>=1) to indicate verbose output.
     bool fVerbose = false;
@@ -215,26 +209,32 @@ static UniValue getrawtransaction(const Config &config,
 
     CTransactionRef tx;
     BlockHash hash_block;
-    if (!GetTransaction(txid, tx, params.GetConsensus(), hash_block,
-                        blockindex)) {
-        std::string errmsg;
-        if (blockindex) {
-            if (!blockindex->nStatus.hasData()) {
-                throw JSONRPCError(RPC_MISC_ERROR, "Block not available");
+    if(txid == Params().GenesisBlock().hashMerkleRoot) {
+        // special case: user queried coinbase tx from genesis block
+        assert(Params().GenesisBlock().vtx.size() == 1);
+        tx = Params().GenesisBlock().vtx[0];
+    } else {
+        if (!GetTransaction(txid, tx, params.GetConsensus(), hash_block,
+                            blockindex)) {
+            std::string errmsg;
+            if (blockindex) {
+                if (!blockindex->nStatus.hasData()) {
+                    throw JSONRPCError(RPC_MISC_ERROR, "Block not available");
+                }
+                errmsg = "No such transaction found in the provided block";
+            } else if (!g_txindex) {
+                errmsg = "No such mempool transaction. Use -txindex to enable "
+                         "blockchain transaction queries";
+            } else if (!f_txindex_ready) {
+                errmsg = "No such mempool transaction. Blockchain transactions are "
+                         "still in the process of being indexed";
+            } else {
+                errmsg = "No such mempool or blockchain transaction";
             }
-            errmsg = "No such transaction found in the provided block";
-        } else if (!g_txindex) {
-            errmsg = "No such mempool transaction. Use -txindex to enable "
-                     "blockchain transaction queries";
-        } else if (!f_txindex_ready) {
-            errmsg = "No such mempool transaction. Blockchain transactions are "
-                     "still in the process of being indexed";
-        } else {
-            errmsg = "No such mempool or blockchain transaction";
-        }
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                           errmsg +
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                               errmsg +
                                ". Use gettransaction for wallet transactions.");
+        }
     }
 
     if (!fVerbose) {

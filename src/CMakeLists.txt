@@ -27,6 +27,10 @@ option(ENABLE_CLANG_TIDY "Enable clang-tidy checks for Bitcoin ABC" OFF)
 option(ENABLE_PROFILING "Select the profiling tool to use" OFF)
 option(USE_LD_GOLD "Try to use gold as a linker if available" ON)
 
+# VeriBlock
+find_package(veriblock-pop-cpp REQUIRED)
+link_libraries(veriblock-pop-cpp)
+
 set(OS_WITH_JEMALLOC_AS_SYSTEM_DEFAULT
 	"Android"
 	"FreeBSD"
@@ -241,7 +245,6 @@ if(USE_JEMALLOC)
 	endif()
 endif()
 
-
 # Make sure that all the global compiler and linker flags are set BEFORE
 # including the libraries so they apply as needed.
 
@@ -398,6 +401,8 @@ target_compile_definitions(util PUBLIC BOOST_SP_USE_STD_ATOMIC BOOST_AC_USE_STD_
 # More completely unrelated features shared by all executables.
 # Because nothing says this is different from util than "common"
 add_library(common
+  	vbk/pop_common.cpp
+	vbk/genesis_common.cpp
 	amount.cpp
 	base58.cpp
 	bloom.cpp
@@ -477,6 +482,13 @@ endif()
 
 # Bitcoin server facilities
 add_library(server
+	vbk/bootstraps-testnet.cpp
+	vbk/bootstraps-mainnet.cpp
+	vbk/merkle.cpp
+	vbk/params.cpp
+	vbk/pop_service.cpp
+	vbk/rpc_register.cpp
+	vbk/p2p_sync.cpp
 	addrdb.cpp
 	addrman.cpp
 	avalanche/peermanager.cpp
@@ -591,7 +603,7 @@ if(BUILD_BITCOIN_WALLET)
 		target_sources(bitcoin-wallet PRIVATE bitcoin-wallet-res.rc)
 	endif()
 
-	target_link_libraries(bitcoin-wallet wallet-tool common util)
+	target_link_libraries(bitcoin-wallet wallet-tool server)
 
 	add_to_symbols_check(bitcoin-wallet)
 	add_to_security_check(bitcoin-wallet)
@@ -640,7 +652,7 @@ if(BUILD_BITCOIN_TX)
 		target_sources(bitcoin-tx PRIVATE bitcoin-tx-res.rc)
 	endif()
 
-	target_link_libraries(bitcoin-tx bitcoinconsensus)
+	target_link_libraries(bitcoin-tx bitcoinconsensus server)
 
 	add_to_symbols_check(bitcoin-tx)
 	add_to_security_check(bitcoin-tx)

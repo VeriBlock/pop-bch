@@ -5,6 +5,8 @@
 #ifndef BITCOIN_RPC_REGISTER_H
 #define BITCOIN_RPC_REGISTER_H
 
+#include <vbk/rpc_register.hpp>
+
 /**
  * These are in one header file to avoid creating tons of single-function
  * headers for everything under src/rpc/
@@ -35,6 +37,7 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t) {
     RegisterRawTransactionRPCCommands(t);
     RegisterABCRPCCommands(t);
     RegisterAvalancheRPCCommands(t);
+    VeriBlock::RegisterPOPMiningRPCCommands(t);
 }
 
 /**

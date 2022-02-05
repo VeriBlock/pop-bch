@@ -30,6 +30,9 @@
 #include <algorithm>
 #include <utility>
 
+#include <vbk/merkle.hpp>
+#include <vbk/pop_service.hpp>
+
 int64_t UpdateTime(CBlockHeader *pblock, const CChainParams &chainParams,
                    const CBlockIndex *pindexPrev) {
     int64_t nOldTime = pblock->nTime;
@@ -161,6 +164,14 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     int nDescendantsUpdated = 0;
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
+    // VeriBlock: add PopData into the block
+    if (VeriBlock::isPopActive(nHeight)) {
+        pblock->popData = VeriBlock::generatePopData();
+        if (!pblock->popData.empty()) {
+            pblock->nVersion |= VeriBlock::POP_BLOCK_VERSION_BIT;
+        }
+    }
+
     if (IsMagneticAnomalyEnabled(consensusParams, pindexPrev)) {
         // If magnetic anomaly is enabled, we make sure transaction are
         // canonically ordered.
@@ -188,8 +199,13 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
     coinbaseTx.vout[0].nValue =
-        nFees + GetBlockSubsidy(nHeight, consensusParams);
+        nFees + GetBlockSubsidy(nHeight, chainParams);
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
+
+    // VeriBlock add pop rewards
+    if (VeriBlock::isPopActive(nHeight)) {
+        VeriBlock::addPopPayoutsIntoCoinbaseTx(coinbaseTx, *pindexPrev, chainParams);
+    }
 
     const std::vector<CTxDestination> whitelisted =
         GetMinerFundWhitelist(consensusParams, pindexPrev);
@@ -206,6 +222,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
         coinbaseTx.vin[0].scriptSig
             << std::vector<uint8_t>(MIN_TX_SIZE - coinbaseSize - 1);
     }
+
 
     pblocktemplate->entries[0].tx = MakeTransactionRef(coinbaseTx);
     pblocktemplate->entries[0].fees = -1 * nFees;
@@ -575,5 +592,7 @@ void IncrementExtraNonce(CBlock *pblock, const CBlockIndex *pindexPrev,
     assert(::GetSerializeSize(txCoinbase, PROTOCOL_VERSION) >= MIN_TX_SIZE);
 
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
-    pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
+
+    // VeriBlock
+    pblock->hashMerkleRoot = VeriBlock::TopLevelMerkleRoot(pindexPrev, *pblock);
 }

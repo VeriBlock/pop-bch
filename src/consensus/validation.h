@@ -9,6 +9,9 @@
 #include <cassert>
 #include <string>
 
+#include <vbk/util.hpp>
+#include <veriblock/pop.hpp>
+
 /** "reject" message codes */
 static const uint8_t REJECT_MALFORMED = 0x01;
 static const uint8_t REJECT_INVALID = 0x10;
@@ -168,5 +171,13 @@ public:
     }
     BlockValidationResult GetResult() const { return m_result; }
 };
+
+static inline int64_t GetBlockWeight(const CBlock& block)
+{
+    int64_t popDataSize = 0;
+    popDataSize += VeriBlock::GetPopDataWeight(block.popData);
+
+    return ::GetSerializeSize(block, PROTOCOL_VERSION) - popDataSize;
+}
 
 #endif // BITCOIN_CONSENSUS_VALIDATION_H

@@ -379,7 +379,7 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
 bool ActivateBestChain(
     const Config &config, BlockValidationState &state,
     std::shared_ptr<const CBlock> pblock = std::shared_ptr<const CBlock>());
-Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams);
+Amount GetBlockSubsidy(int nHeight, const CChainParams& params);
 
 /**
  * Guess verification progress (as a fraction between 0.0=genesis and
@@ -647,9 +647,13 @@ bool CheckBlock(const CBlock &block, BlockValidationState &state,
                 const Consensus::Params &params,
                 BlockValidationOptions validationOptions);
 
+bool ContextualCheckBlock(const CBlock &block, BlockValidationState &state,
+                          const Consensus::Params &params,
+                          const CBlockIndex *pindexPrev, bool fCheckMerkleRoot);
+
 /**
- * This is a variant of ContextualCheckTransaction which computes the contextual
- * check for a transaction based on the chain tip.
+ * This is a variant of ContextualCheckTransaction which computes the
+ * contextual check for a transaction based on the chain tip.
  *
  * See consensus/consensus.h for flag definitions.
  */
@@ -906,6 +910,11 @@ private:
                            const BlockValidationState &state)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex *FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    CBlockIndex *FindBestChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool TestBlockIndex(CBlockIndex *pindexTest)
+        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
     void ReceivedBlockTransactions(const CBlock &block, CBlockIndex *pindexNew,
                                    const FlatFilePos &pos)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);

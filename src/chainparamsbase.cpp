@@ -12,6 +12,7 @@
 
 const std::string CBaseChainParams::MAIN = "main";
 const std::string CBaseChainParams::TESTNET = "test";
+const std::string CBaseChainParams::POPTESTNET = "poptest";
 const std::string CBaseChainParams::REGTEST = "regtest";
 
 void SetupChainParamsBaseOptions() {
@@ -27,6 +28,8 @@ void SetupChainParamsBaseOptions() {
         ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY,
         OptionsCategory::CHAINPARAMS);
     gArgs.AddArg("-testnet", "Use the test chain. Equivalent to -chain=test.",
+                 ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+    gArgs.AddArg("-poptestnet", "Use the test chain. Equivalent to -chain=poptest.",
                  ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
 }
 
@@ -45,6 +48,10 @@ CreateBaseChainParams(const std::string &chain) {
 
     if (chain == CBaseChainParams::TESTNET) {
         return std::make_unique<CBaseChainParams>("testnet3", 18332);
+    }
+
+    if (chain == CBaseChainParams::POPTESTNET) {
+        return std::make_unique<CBaseChainParams>("poptestnet", 18332);
     }
 
     if (chain == CBaseChainParams::REGTEST) {

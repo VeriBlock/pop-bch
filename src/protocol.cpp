@@ -46,6 +46,9 @@ const char *GETBLOCKTXN = "getblocktxn";
 const char *BLOCKTXN = "blocktxn";
 const char *AVAPOLL = "avapoll";
 const char *AVARESPONSE = "avaresponse";
+const char *POPATV="ATV";
+const char *POPVTB="VTB";
+const char *POPVBK="VBK";
 
 bool IsBlockLike(const std::string &strCommand) {
     return strCommand == NetMsgType::BLOCK ||
@@ -67,7 +70,8 @@ static const std::string allNetMessageTypes[] = {
     NetMsgType::NOTFOUND,    NetMsgType::FILTERLOAD, NetMsgType::FILTERADD,
     NetMsgType::FILTERCLEAR, NetMsgType::REJECT,     NetMsgType::SENDHEADERS,
     NetMsgType::FEEFILTER,   NetMsgType::SENDCMPCT,  NetMsgType::CMPCTBLOCK,
-    NetMsgType::GETBLOCKTXN, NetMsgType::BLOCKTXN,
+    NetMsgType::GETBLOCKTXN, NetMsgType::BLOCKTXN,   NetMsgType::POPATV,
+    NetMsgType::POPVTB,      NetMsgType::POPVBK,
 };
 static const std::vector<std::string>
     allNetMessageTypesVec(allNetMessageTypes,
@@ -230,6 +234,12 @@ std::string CInv::GetCommand() const {
             return cmd.append(NetMsgType::MERKLEBLOCK);
         case MSG_CMPCT_BLOCK:
             return cmd.append(NetMsgType::CMPCTBLOCK);
+        case MSG_POP_ATV:
+            return cmd.append(NetMsgType::POPATV);
+        case MSG_POP_VTB:
+            return cmd.append(NetMsgType::POPVTB);
+        case MSG_POP_VBK:
+            return cmd.append(NetMsgType::POPVBK);
         default:
             throw std::out_of_range(
                 strprintf("CInv::GetCommand(): type=%d unknown type", type));

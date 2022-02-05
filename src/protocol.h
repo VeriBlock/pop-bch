@@ -269,6 +269,11 @@ extern const char *AVAPOLL;
  */
 extern const char *AVARESPONSE;
 
+// VeriBlock:
+extern const char *POPATV; // contains ATV
+extern const char *POPVTB; // contains VTB
+extern const char *POPVBK; // contains VBK block
+
 /**
  * Indicate if the message is used to transmit the content of a block.
  * These messages can be significantly larger than usual messages and therefore
@@ -430,6 +435,11 @@ enum GetDataMsg {
     MSG_FILTERED_BLOCK = 3,
     //! Defined in BIP152
     MSG_CMPCT_BLOCK = 4,
+
+    // VeriBlock: start numbers after 1 + 2 + 4 = 7
+    MSG_POP_ATV = 8,
+    MSG_POP_VTB = 9,
+    MSG_POP_VBK = 10,
 };
 
 /**
