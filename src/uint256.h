@@ -98,6 +98,10 @@ public:
     template <typename Stream> void Unserialize(Stream &s) {
         s.read((char *)data, sizeof(data));
     }
+
+    std::vector<uint8_t> asVector() const {
+        return std::vector<uint8_t>{begin(), end()};
+    }
 };
 
 /**

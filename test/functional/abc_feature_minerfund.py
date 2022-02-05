@@ -58,7 +58,7 @@ class MinerFundTest(BitcoinTestFramework):
 
         # No money goes to the fund.
         coinbase = get_best_coinbase()
-        assert_equal(len(coinbase['vout']), 1)
+        assert_equal(len(coinbase['vout']), 2)
         block_reward = coinbase['vout'][0]['value']
 
         # First block with the new rules.
@@ -66,7 +66,7 @@ class MinerFundTest(BitcoinTestFramework):
 
         # Now we send part of the coinbase to the fund.
         coinbase = get_best_coinbase()
-        assert_equal(len(coinbase['vout']), 2)
+        assert_equal(len(coinbase['vout']), 3)
         assert_equal(
             coinbase['vout'][1]['scriptPubKey']['addresses'][0],
             MINER_FUND_ADDR)

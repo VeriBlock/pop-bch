@@ -13,7 +13,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-BOOST_FIXTURE_TEST_SUITE(undo_tests, BasicTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(undo_tests, TestingSetup)
 
 static void UpdateUTXOSet(const CBlock &block, CCoinsViewCache &view,
                           CBlockUndo &blockundo,
@@ -34,6 +34,7 @@ static void UpdateUTXOSet(const CBlock &block, CCoinsViewCache &view,
 static void UndoBlock(const CBlock &block, CCoinsViewCache &view,
                       const CBlockUndo &blockUndo,
                       const CChainParams &chainparams, uint32_t nHeight) {
+    LOCK(cs_main);
     CBlockIndex pindex;
     pindex.nHeight = nHeight;
     ApplyBlockUndo(blockUndo, block, &pindex, view);

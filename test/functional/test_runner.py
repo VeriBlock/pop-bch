@@ -81,6 +81,47 @@ NON_SCRIPTS = [
     "combine_logs.py",
     "create_cache.py",
     "test_runner.py",
+    # VeriBlock
+    # disable some tests
+    "p2p_compactblocks.py",
+    "feature_block.py",
+    "p2p_sendheaders.py",
+    "rpc_txoutproof.py",
+    "feature_csv_activation.py",
+    "rpc_rawtransaction.py",
+    "feature_bip68_sequence.py",
+    "interface_rest.py",
+    "rpc_blockchain.py",
+    "p2p_invalid_block.py",
+    "p2p_invalid_tx.py",
+    "feature_assumevalid.py",
+    "wallet_importprunedfunds.py",
+     "mining_basic.py",
+    "feature_dersig.py",
+    "feature_cltv.py",
+    "rpc_getblockstats.py",
+    "p2p_fingerprint.py",
+    "p2p_dos_header_tree.py",
+    "p2p_unrequested_blocks.py",
+    "wallet_resendwallettransactions.py",
+    "example_test.py",
+    # VeriBlock
+    # disable some bitcoin cash tests
+    "abc-invalid-chains.py",
+    "abc-mempool-coherence-on-activations.py",
+    "abc-minimaldata.py",
+    "abc-replay-protection.py",
+    "abc-schnorr.py",
+    "abc-schnorrmultisig.py",
+    "abc-segwit-recovery.py",
+    "abc-sync-chain.py",
+    "abc-transaction-ordering.py",
+    "abc_feature_minerfund.py",
+    "abc-finalize-block.py",
+    "abc_p2p_avalanche.py",
+    "abc-parkedchain.py",
+    # VeriBlock
+    "feature_pop_popdata_max_size.py"
 ]
 
 TEST_PARAMS = {

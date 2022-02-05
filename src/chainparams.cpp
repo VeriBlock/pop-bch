@@ -145,6 +145,13 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // Nov 15, 2021 12:00:00 UTC protocol upgrade
+        consensus.selectronActivationTime = 1636977600;
+
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        // consensus.VeriBlockPopSecurityHeight = -1;
+
         /**
          * The message start string is designed to be unlikely to occur in
          * normal data. The characters are rarely used upper ASCII, not valid as
@@ -349,6 +356,13 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // Nov 15, 2021 12:00:00 UTC protocol upgrade
+        consensus.selectronActivationTime = 1636977600;
+
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        // consensus.VeriBlockPopSecurityHeight = -1;
+
         diskMagic[0] = 0x0b;
         diskMagic[1] = 0x11;
         diskMagic[2] = 0x09;
@@ -434,6 +448,263 @@ public:
 };
 
 /**
+ * Testnet (v3)
+ */
+class CPopTestNetParams : public CChainParams {
+public:
+    CPopTestNetParams() {
+        //! VeriBlock Old version of the CPopTestNetParams
+        // strNetworkID = CBaseChainParams::POPTESTNET;
+        // consensus.nSubsidyHalvingInterval = 210000;
+        // // 00000000040b4e986385315e14bee30ad876d8b47f748025b26683116d21aa65
+        // consensus.BIP16Height = 514;
+        // consensus.BIP34Height = 21111;
+        // consensus.BIP34Hash = BlockHash::fromHex(
+        //     "0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8");
+        // // 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
+        // consensus.BIP65Height = 581885;
+        // // 000000002104c8c45e99a8853285a3b592602a3ccde2b832481da85e9e4ba182
+        // consensus.BIP66Height = 330776;
+        // // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
+        // consensus.CSVHeight = 770112;
+        // consensus.powLimit = uint256S(
+        //     "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        // // two weeks
+        // consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
+        // consensus.nPowTargetSpacing = 10 * 60;
+        // consensus.fPowAllowMinDifficultyBlocks = true;
+        // consensus.fPowNoRetargeting = false;
+
+        // // two days
+        // consensus.nDAAHalfLife = 2 * 24 * 60 * 60;
+
+        // // nPowTargetTimespan / nPowTargetSpacing
+        // consensus.nMinerConfirmationWindow = 2016;
+        // consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY] = {
+        //     .bit = 28,
+        //     // 75% of 2016
+        //     .nActivationThreshold = 1512,
+        //     // January 1, 2008
+        //     .nStartTime = 1199145601,
+        //     // December 31, 2008
+        //     .nTimeout = 1230767999,
+        // };
+
+        // // The miner fund is disabled by default on testnet.
+        // consensus.enableMinerFund = false;
+
+        // // The best chain should have at least this much work.
+        // consensus.nMinimumChainWork =
+        //     uint256S("00000000000000000000000000000000000000000000000000000000000000c6");
+
+        // // By default assume that the signatures in ancestors of this block
+        // are
+        // // valid.
+        // consensus.defaultAssumeValid =
+        //     ChainParamsConstants::TESTNET_DEFAULT_ASSUME_VALID;
+
+        // // August 1, 2017 hard fork
+        // consensus.uahfHeight = 1;
+
+        // // November 13, 2017 hard fork
+        // consensus.daaHeight = 1;
+
+        // // November 15, 2018 hard fork
+        // consensus.magneticAnomalyHeight = 1;
+
+        // // November 15, 2019 protocol upgrade
+        // consensus.gravitonHeight = 1;
+
+        // // May 15, 2020 12:00:00 UTC protocol upgrade
+        // consensus.phononHeight = 1;
+
+        // // Nov 15, 2020 12:00:00 UTC protocol upgrade
+        // consensus.axionActivationTime = 1605441600;
+
+        // // May 15, 2021 12:00:00 UTC protocol upgrade
+        // consensus.tachyonActivationTime = 1621080000;
+
+        // // VeriBlock
+        // consensus.VeriBlockPopSecurityHeight = 200;
+
+        // diskMagic[0] = 0x70; // P
+        // diskMagic[1] = 0x69; // O
+        // diskMagic[2] = 0x70; // P
+        // diskMagic[3] = 0x07;
+        // netMagic[0] = 0x70;  // P
+        // netMagic[1] = 0x69;  // O
+        // netMagic[2] = 0x70;  // P
+        // netMagic[3] = 0xf4;
+        // nDefaultPort = 18333;
+        // nPruneAfterHeight = 1000;
+        // m_assumed_blockchain_size =
+        //     ChainParamsConstants::TESTNET_ASSUMED_BLOCKCHAIN_SIZE;
+        // m_assumed_chain_state_size =
+        //     ChainParamsConstants::TESTNET_ASSUMED_CHAINSTATE_SIZE;
+
+        // genesis =
+        //     CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 *
+        //     COIN);
+        // consensus.hashGenesisBlock = genesis.GetHash();
+        // assert(consensus.hashGenesisBlock ==
+        //        uint256S("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526"
+        //                 "f8d77f4943"));
+        // assert(genesis.hashMerkleRoot ==
+        //        uint256S("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b"
+        //                 "7afdeda33b"));
+
+        // vFixedSeeds.clear();
+        // vSeeds.clear();
+
+        // base58Prefixes[PUBKEY_ADDRESS] = std::vector<uint8_t>(1, 111);
+        // base58Prefixes[SCRIPT_ADDRESS] = std::vector<uint8_t>(1, 196);
+        // base58Prefixes[SECRET_KEY] = std::vector<uint8_t>(1, 239);
+        // base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
+        // base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
+        // cashaddrPrefix = "bchpoptest";
+        // vFixedSeeds = std::vector<SeedSpec6>(
+        //     pnSeed6_poptest, pnSeed6_poptest + ARRAYLEN(pnSeed6_poptest));
+
+        // fDefaultConsistencyChecks = false;
+        // fRequireStandard = false;
+        // m_is_test_chain = true;
+        // m_is_mockable_chain = false;
+
+        // checkpointData = {
+        //     .mapCheckpoints = {
+
+        //     }};
+
+        // // Data as of block
+        // // 000000000005b07ecf85563034d13efd81c1a29e47e22b20f4fc6919d5b09cd6
+        // // (height 1223263)
+        // chainTxData = ChainTxData{1522608381, 15052068, 0.15};
+
+        //! Same for the regtest
+        strNetworkID = CBaseChainParams::POPTESTNET;
+        consensus.nSubsidyHalvingInterval = 150;
+        // always enforce P2SH BIP16 on regtest
+        consensus.BIP16Height = 0;
+        // BIP34 activated on regtest (Used in functional tests)
+        consensus.BIP34Height = 500;
+        consensus.BIP34Hash = BlockHash();
+        // BIP65 activated on regtest (Used in functional tests)
+        consensus.BIP65Height = 1351;
+        // BIP66 activated on regtest (Used in functional tests)
+        consensus.BIP66Height = 1251;
+        // CSV activated on regtest (Used in functional tests)
+        consensus.CSVHeight = 576;
+        consensus.powLimit = uint256S(
+            "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        // two weeks
+        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
+        consensus.nPowTargetSpacing = 10 * 60;
+        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowNoRetargeting = true;
+
+        // two days
+        consensus.nDAAHalfLife = 2 * 24 * 60 * 60;
+
+        // Faster than normal for regtest (144 instead of 2016)
+        consensus.nMinerConfirmationWindow = 144;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY] = {
+            .bit = 28,
+            // 75% of 144
+            .nActivationThreshold = 108,
+        };
+
+        // The miner fund is disabled by default on regnet.
+        consensus.enableMinerFund = false;
+
+        // The best chain should have at least this much work.
+        consensus.nMinimumChainWork = uint256S("0x00");
+
+        // By default assume that the signatures in ancestors of this block are
+        // valid.
+        consensus.defaultAssumeValid = BlockHash();
+
+        // UAHF is always enabled on regtest.
+        consensus.uahfHeight = 0;
+
+        // November 13, 2017 hard fork is always on on regtest.
+        consensus.daaHeight = 0;
+
+        // November 15, 2018 hard fork is always on on regtest.
+        consensus.magneticAnomalyHeight = 0;
+
+        // November 15, 2019 protocol upgrade
+        consensus.gravitonHeight = 0;
+
+        // May 15, 2020 12:00:00 UTC protocol upgrade
+        consensus.phononHeight = 0;
+
+        // Nov 15, 2020 12:00:00 UTC protocol upgrade
+        consensus.axionActivationTime = 1605441600;
+
+        // May 15, 2021 12:00:00 UTC protocol upgrade
+        consensus.tachyonActivationTime = 1621080000;
+
+        // Nov 15, 2029 12:00:00 UTC protocol upgrade
+        // Effectively disable it due to malfunction
+        // Tests fail with mandatory-script-verify-flag-failed error and
+        // Insufficient Funds error
+        consensus.selectronActivationTime = 1889438400;
+
+
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        consensus.VeriBlockPopSecurityHeight = 200;
+
+        diskMagic[0] = 0xfa;
+        diskMagic[1] = 0xbf;
+        diskMagic[2] = 0xb5;
+        diskMagic[3] = 0xda;
+        netMagic[0] = 0xda;
+        netMagic[1] = 0xb5;
+        netMagic[2] = 0xbf;
+        netMagic[3] = 0xfa;
+        nDefaultPort = 18444;
+        nPruneAfterHeight = 1000;
+        m_assumed_blockchain_size = 0;
+        m_assumed_chain_state_size = 0;
+
+        genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
+        consensus.hashGenesisBlock = genesis.GetHash();
+        assert(consensus.hashGenesisBlock ==
+               uint256S("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b"
+                        "1a11466e2206"));
+        assert(genesis.hashMerkleRoot ==
+               uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab212"
+                        "7b7afdeda33b"));
+
+        //! Regtest mode doesn't have any fixed seeds.
+        vFixedSeeds.clear();
+        //! Regtest mode doesn't have any DNS seeds.
+        vSeeds.clear();
+
+        fDefaultConsistencyChecks = true;
+        fRequireStandard = true;
+        m_is_test_chain = true;
+        m_is_mockable_chain = true;
+
+        checkpointData = {
+            .mapCheckpoints = {
+                {0, BlockHash::fromHex("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb4"
+                                       "36012afca590b1a11466e2206")},
+            }};
+
+        chainTxData = ChainTxData{0, 0, 0};
+
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<uint8_t>(1, 111);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<uint8_t>(1, 196);
+        base58Prefixes[SECRET_KEY] = std::vector<uint8_t>(1, 239);
+        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
+        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
+        cashaddrPrefix = "bchreg";
+    }
+};
+
+/**
  * Regression test
  */
 class CRegTestParams : public CChainParams {
@@ -502,6 +773,16 @@ public:
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 1621080000;
 
+        // Nov 15, 2029 12:00:00 UTC protocol upgrade
+        // Effectively disable it due to malfunction
+        // Tests fail with mandatory-script-verify-flag-failed error and
+        // Insufficient Funds error
+        consensus.selectronActivationTime = 1889438400;
+
+        // VeriBlock
+        // TODO: set an VeriBlock pop security fork height
+        consensus.VeriBlockPopSecurityHeight = 200;
+
         diskMagic[0] = 0xfa;
         diskMagic[1] = 0xbf;
         diskMagic[2] = 0xb5;
@@ -565,6 +846,10 @@ std::unique_ptr<CChainParams> CreateChainParams(const std::string &chain) {
 
     if (chain == CBaseChainParams::TESTNET) {
         return std::make_unique<CTestNetParams>();
+    }
+
+    if (chain == CBaseChainParams::POPTESTNET) {
+        return std::make_unique<CPopTestNetParams>();
     }
 
     if (chain == CBaseChainParams::REGTEST) {

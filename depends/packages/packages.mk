@@ -1,4 +1,4 @@
-packages:=boost openssl libevent
+packages:=boost openssl libevent veriblock-pop-cpp
 
 protobuf_native_packages = native_protobuf
 protobuf_packages = protobuf

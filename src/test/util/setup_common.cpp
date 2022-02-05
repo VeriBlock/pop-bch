@@ -35,6 +35,9 @@
 #include <functional>
 #include <memory>
 
+#include <vbk/params.hpp>
+#include <vbk/pop_service.hpp>
+
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
 
 FastRandomContext g_insecure_rand_ctx;
@@ -58,6 +61,7 @@ BasicTestingSetup::BasicTestingSetup(const std::string &chainName)
     gArgs.ForceSetArg("-datadir", m_path_root.string());
     ClearDatadirCache();
     SelectParams(chainName);
+    VeriBlock::selectPopConfig("regtest");
     gArgs.ForceSetArg("-printtoconsole", "0");
     InitLogging();
     LogInstance().StartLogging();
@@ -112,6 +116,7 @@ TestingSetup::TestingSetup(const std::string &chainName)
     GetMainSignals().RegisterBackgroundSignalScheduler(*g_rpc_node->scheduler);
 
     pblocktree.reset(new CBlockTreeDB(1 << 20, true));
+    VeriBlock::InitPopContext(*pblocktree);
     pcoinsdbview.reset(new CCoinsViewDB(1 << 23, true));
     pcoinsTip.reset(new CCoinsViewCache(pcoinsdbview.get()));
     if (!LoadGenesisBlock(chainparams)) {
@@ -144,6 +149,7 @@ TestingSetup::~TestingSetup() {
     }
     threadGroup.interrupt_all();
     threadGroup.join_all();
+    VeriBlock::StopPop();
     GetMainSignals().FlushBackgroundCallbacks();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
     g_rpc_node = nullptr;
@@ -167,6 +173,10 @@ TestChain100Setup::TestChain100Setup() {
         CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
         m_coinbase_txns.push_back(b.vtx[0]);
     }
+
+    auto &tree = VeriBlock::GetPop().getAltBlockTree();
+    assert(tree.getBestChain().tip()->getHeight() ==
+           ChainActive().Tip()->nHeight);
 }
 
 //
@@ -174,7 +184,8 @@ TestChain100Setup::TestChain100Setup() {
 // scriptPubKey, and try to add it to the current chain.
 //
 CBlock TestChain100Setup::CreateAndProcessBlock(
-    const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey) {
+    const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey,
+    bool *isBlockValid) {
     const Config &config = GetConfig();
     std::unique_ptr<CBlockTemplate> pblocktemplate =
         BlockAssembler(config, *m_node.mempool).CreateNewBlock(scriptPubKey);
@@ -201,6 +212,8 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
                             config.GetMaxBlockSize(), extraNonce);
     }
 
+    block.nTime = ::ChainActive().Tip()->nTime + (rand() % 100 + 1);
+
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
     while (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
         ++block.nNonce;
@@ -208,7 +221,10 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
 
     std::shared_ptr<const CBlock> shared_pblock =
         std::make_shared<const CBlock>(block);
-    ProcessNewBlock(config, shared_pblock, true, nullptr);
+    bool isValid = ProcessNewBlock(config, shared_pblock, true, nullptr);
+    if (isBlockValid != nullptr) {
+        *isBlockValid = isValid;
+    }
 
     CBlock result = block;
     return result;

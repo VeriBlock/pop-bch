@@ -29,6 +29,8 @@
 #include <functional>
 #include <memory>
 
+#include <vbk/params.hpp>
+
 static bool fCreateBlank;
 static std::map<std::string, UniValue> registers;
 static const int CONTINUE_EXECUTION = -1;
@@ -119,6 +121,7 @@ static int AppInitRawTx(int argc, char *argv[]) {
     // valid after this clause)
     try {
         SelectParams(gArgs.GetChainName());
+        VeriBlock::selectPopConfig(gArgs.GetChainName());
     } catch (const std::exception &e) {
         tfm::format(std::cerr, "Error: %s\n", e.what());
         return EXIT_FAILURE;

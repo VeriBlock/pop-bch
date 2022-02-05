@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Utilities for manipulating blocks and transactions."""
 
+from .pop import ContextInfoContainer
 from .script import (
     CScript,
     OP_CHECKSIG,
@@ -22,17 +23,28 @@ from .messages import (
     CTxOut,
     FromHex,
     ToHex,
+    hash256,
+    hex_str_to_bytes,
+    ser_uint256,
+    sha256,
+    uint256_from_str,
     ser_string,
 )
 from .txtools import pad_tx
+from .test_node import TestNode
 from .util import assert_equal, satoshi_round
+from .pop import ContextInfoContainer, PopMiningContext, calculateTopLevelMerkleRoot
+from .pop_const import POW_PAYOUT, POP_ACTIVATION_HEIGHT, POW_REWARD_PERCENTAGE
 
 # Genesis block time (regtest)
 TIME_GENESIS_BLOCK = 1296688602
 
 
-def create_block(hashprev, coinbase, ntime=None, *, version=1):
+def create_block(popctx: PopMiningContext, hashprev, coinbase, ntime=None, *, version=1):
     """Create a block (with regtest difficulty)."""
+    assert isinstance(popctx, PopMiningContext)
+    assert isinstance(hashprev, int)
+
     block = CBlock()
     block.nVersion = version
     if ntime is None:
@@ -41,12 +53,40 @@ def create_block(hashprev, coinbase, ntime=None, *, version=1):
     else:
         block.nTime = ntime
     block.hashPrevBlock = hashprev
-    # difficulty retargeting is disabled in REGTEST chainparams
-    block.nBits = 0x207fffff
+    block.nBits = 0x207fffff  # difficulty retargeting is disabled in REGTEST chainparams
     block.vtx.append(coinbase)
-    block.hashMerkleRoot = block.calc_merkle_root()
+    block.hashMerkleRoot = calculateTopLevelMerkleRoot(
+        popctx=popctx,
+        txRoot=block.calc_merkle_root(),
+        prevHash=ser_uint256(hashprev)[::-1].hex(),
+        # leave PopData empty
+    )
     block.calc_sha256()
     return block
+
+#def create_block(node, hashprev, coinbase, ntime=None, *, version=1, prevheight = None):
+#    """Create a block (with regtest difficulty)."""
+#    assert isinstance(node, TestNode)
+#    assert isinstance(hashprev, int)
+#
+#    block = CBlock()
+#    block.nVersion = version
+#    if ntime is None:
+#        import time
+#        block.nTime = int(time.time() + 600)
+#    else:
+#        block.nTime = ntime
+#    block.hashPrevBlock = hashprev
+#    # difficulty retargeting is disabled in REGTEST chainparams
+#    block.nBits = 0x207fffff
+#    block.vtx.append(coinbase)
+#    
+#    #block.hashMerkleRoot = block.calc_merkle_root()
+#    block.contextinfo = ContextInfoContainer.create(node, hashprev, prevheight)
+#    block.hashMerkleRoot = block.get_top_level_merkle_root()
+#
+#    block.calc_sha256()
+#    return block
 
 
 def make_conform_to_ctor(block):
@@ -81,14 +121,24 @@ def create_coinbase(height, pubkey=None):
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff),
                               ser_string(serialize_script_num(height)), 0xffffffff))
     coinbaseoutput = CTxOut()
-    coinbaseoutput.nValue = 50 * COIN
+    coinbaseoutput.nValue = POW_PAYOUT * COIN
+    if height >= POP_ACTIVATION_HEIGHT:
+        coinbaseoutput.nValue = POW_PAYOUT * COIN
+        coinbaseoutput.nValue = int(coinbaseoutput.nValue * (100 - POW_REWARD_PERCENTAGE) / 100)
     halvings = int(height / 150)  # regtest
     coinbaseoutput.nValue >>= halvings
     if (pubkey is not None):
         coinbaseoutput.scriptPubKey = CScript([pubkey, OP_CHECKSIG])
     else:
         coinbaseoutput.scriptPubKey = CScript([OP_TRUE])
-    coinbase.vout = [coinbaseoutput]
+    
+    popout = CTxOut()
+    popout.nValue = 0
+    popout.scriptPubKey = CScript([OP_RETURN, b'\x3a\xe6\xca' + b'\x00' * 32])
+    assert len(popout.scriptPubKey) == 37, "len(script)={}\nscript:{}".format(len(popout.scriptPubKey), popout.scriptPubKey.hex())
+    # popMerkleRoot is assumed to be 32 zeroes (no pop txes in a block)
+    
+    coinbase.vout = [coinbaseoutput, popout]
 
     # Make sure the coinbase is at least 100 bytes
     pad_tx(coinbase)

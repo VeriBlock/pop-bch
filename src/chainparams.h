@@ -94,6 +94,12 @@ public:
     const CCheckpointData &Checkpoints() const { return checkpointData; }
     const ChainTxData &TxData() const { return chainTxData; }
 
+    // VeriBlock
+    bool isPopActive(int height) const {
+        return height >= consensus.VeriBlockPopSecurityHeight;
+    }
+    uint32_t PopRewardPercentage() const { return mPopRewardPercentage; }
+
 protected:
     CChainParams() {}
 
@@ -116,6 +122,10 @@ protected:
     bool m_is_mockable_chain;
     CCheckpointData checkpointData;
     ChainTxData chainTxData;
+
+    // VeriBlock:
+    // cut this % from coinbase subsidy
+    uint32_t mPopRewardPercentage = 50; // %
 };
 
 /**

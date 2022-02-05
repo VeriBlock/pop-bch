@@ -270,8 +270,8 @@ const std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const {
 const std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const {
     // Section names to be recognized in the config file.
     static const std::set<std::string> available_sections{
-        CBaseChainParams::REGTEST, CBaseChainParams::TESTNET,
-        CBaseChainParams::MAIN};
+        CBaseChainParams::REGTEST, CBaseChainParams::POPTESTNET,
+        CBaseChainParams::TESTNET, CBaseChainParams::MAIN};
 
     LOCK(cs_args);
     std::list<SectionInfo> unrecognized = m_config_sections;
@@ -944,10 +944,11 @@ std::string ArgsManager::GetChainName() const {
 
     const bool fRegTest = get_net("-regtest");
     const bool fTestNet = get_net("-testnet");
+    const bool fPopTestNet = get_net("-poptestnet");
     const bool is_chain_arg_set = IsArgSet("-chain");
 
-    if (int(is_chain_arg_set) + int(fRegTest) + int(fTestNet) > 1) {
-        throw std::runtime_error("Invalid combination of -regtest, -testnet "
+    if (int(is_chain_arg_set) + int(fRegTest) + int(fTestNet) + int(fPopTestNet) > 1) {
+        throw std::runtime_error("Invalid combination of -regtest, -testnet, -poptestnet "
                                  "and -chain. Can use at most one.");
     }
     if (fRegTest) {
@@ -955,6 +956,9 @@ std::string ArgsManager::GetChainName() const {
     }
     if (fTestNet) {
         return CBaseChainParams::TESTNET;
+    }
+    if (fPopTestNet) {
+        return CBaseChainParams::POPTESTNET;
     }
     return GetArg("-chain", CBaseChainParams::MAIN);
 }

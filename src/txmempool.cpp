@@ -23,6 +23,8 @@
 #include <validationinterface.h>
 #include <version.h>
 
+#include <vbk/pop_service.hpp>
+
 #include <algorithm>
 
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef &_tx, const Amount _nFee,

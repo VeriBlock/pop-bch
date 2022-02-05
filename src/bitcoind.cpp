@@ -25,6 +25,8 @@
 
 #include <functional>
 
+#include <vbk/params.hpp>
+
 const std::function<std::string(const char *)> G_TRANSLATION_FUN = nullptr;
 
 /* Introduction text for doxygen: */
@@ -116,6 +118,7 @@ static bool AppInit(int argc, char *argv[]) {
         // only valid after this clause)
         try {
             SelectParams(gArgs.GetChainName());
+            VeriBlock::selectPopConfig(gArgs.GetChainName());
             node.chain = interfaces::MakeChain(node, config.GetChainParams());
         } catch (const std::exception &e) {
             return InitError(strprintf("%s\n", e.what()));

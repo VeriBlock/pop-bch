@@ -34,6 +34,9 @@
 
 #include <memory>
 
+#include <vbk/p2p_sync.hpp>
+#include <vbk/pop_service.hpp>
+
 #if defined(NDEBUG)
 #error "Bitcoin cannot be compiled without assertions."
 #endif
@@ -314,6 +317,12 @@ struct CNodeState {
     //! Whether this peer wants invs or cmpctblocks (when possible) for block
     //! announcements.
     bool fPreferHeaderAndIDs;
+
+    //! VeriBlock: The block this peer thinks is current tip.
+    const CBlockIndex *pindexLastAnnouncedBlock = nullptr;
+    //! VeriBlock: The last full block we both have from announced chain.
+    const CBlockIndex *pindexLastCommonAnnouncedBlock = nullptr;
+
     /**
      * Whether this peer will send us cmpctblocks if we request them.
      * This is not used to gate request logic, as we really only care about
@@ -406,11 +415,16 @@ struct CNodeState {
      *   peers.
      */
     struct TxDownloadState {
+        // VeriBlock:
+        // first = tx,atv,vtb,vbk id
+        // second = typeIn (inventory type)
+        using IdTypePair = std::pair<uint256, uint32_t>;
+
         /**
          * Track when to attempt download of announced transactions (process
          * time in micros -> txid)
          */
-        std::multimap<std::chrono::microseconds, TxId> m_tx_process_time;
+        std::multimap<std::chrono::microseconds, IdTypePair> m_tx_process_time;
 
         //! Store all the transactions a peer has recently announced
         std::set<TxId> m_tx_announced;
@@ -658,6 +672,31 @@ static void UpdateBlockAvailability(NodeId nodeid, const BlockHash &hash)
     }
 }
 
+// VeriBlock
+/** Update tracking information about which blocks a peer is assumed to
+ * have. */
+static void UpdateBestChainTip(NodeId nodeid, const BlockHash &tip)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    CNodeState *state = State(nodeid);
+    assert(state != nullptr);
+
+    const CBlockIndex *pindex = LookupBlockIndex(tip);
+    if (pindex && pindex->nChainWork > 0) {
+        state->pindexLastAnnouncedBlock = pindex;
+        LogPrint(BCLog::NET, "peer=%s: announced best chain %s\n", nodeid,
+                 tip.GetHex());
+
+        // announced block is better by chainwork. update
+        // pindexBestKnownBlock
+        if (state->pindexBestKnownBlock == nullptr ||
+            pindex->nChainWork >= state->pindexBestKnownBlock->nChainWork) {
+            state->pindexBestKnownBlock = pindex;
+        }
+    }
+
+    ProcessBlockAvailability(nodeid);
+}
+
 /**
  * When a peer sends us a valid block, instruct it to announce blocks to us
  * using CMPCTBLOCK if possible by adding its nodeid to the end of
@@ -742,15 +781,19 @@ static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex)
     return false;
 }
 
+// VeriBlock updated
 /**
  * Update pindexLastCommonBlock and add not-in-flight missing successors to
  * vBlocks, until it has at most count entries.
  */
-static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
-                                     std::vector<const CBlockIndex *> &vBlocks,
-                                     NodeId &nodeStaller,
-                                     const Consensus::Params &consensusParams)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+static void FindNextBlocksToDownload(
+    NodeId nodeid, unsigned int count,
+    std::vector<const CBlockIndex *> &vBlocks, NodeId &nodeStaller,
+    const Consensus::Params &consensusParams,
+    // either pindexBestBlock or pindexLastAnouncedBlock
+    const CBlockIndex *bestBlock,
+    // out parameter: sets last common block
+    const CBlockIndex **lastCommonBlockOut) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     if (count == 0) {
         return;
     }
@@ -762,39 +805,35 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
     // Make sure pindexBestKnownBlock is up to date, we'll need it.
     ProcessBlockAvailability(nodeid);
 
-    if (state->pindexBestKnownBlock == nullptr ||
-        state->pindexBestKnownBlock->nChainWork <
-            ::ChainActive().Tip()->nChainWork ||
-        state->pindexBestKnownBlock->nChainWork < nMinimumChainWork) {
+    if (bestBlock == nullptr || bestBlock->nChainWork < nMinimumChainWork) {
         // This peer has nothing interesting.
         return;
     }
 
-    if (state->pindexLastCommonBlock == nullptr) {
+    assert(lastCommonBlockOut);
+
+    if (*lastCommonBlockOut == nullptr) {
         // Bootstrap quickly by guessing a parent of our best tip is the forking
         // point. Guessing wrong in either direction is not a problem.
-        state->pindexLastCommonBlock = ::ChainActive()[std::min(
-            state->pindexBestKnownBlock->nHeight, ::ChainActive().Height())];
+        *lastCommonBlockOut = ::ChainActive()[std::min(
+            bestBlock->nHeight, ::ChainActive().Height())];
     }
 
     // If the peer reorganized, our previous pindexLastCommonBlock may not be an
     // ancestor of its current tip anymore. Go back enough to fix that.
-    state->pindexLastCommonBlock = LastCommonAncestor(
-        state->pindexLastCommonBlock, state->pindexBestKnownBlock);
-    if (state->pindexLastCommonBlock == state->pindexBestKnownBlock) {
+    *lastCommonBlockOut = LastCommonAncestor(*lastCommonBlockOut, bestBlock);
+    if (*lastCommonBlockOut == bestBlock) {
         return;
     }
 
     std::vector<const CBlockIndex *> vToFetch;
-    const CBlockIndex *pindexWalk = state->pindexLastCommonBlock;
+    const CBlockIndex *pindexWalk = *lastCommonBlockOut;
     // Never fetch further than the best block we know the peer has, or more
     // than BLOCK_DOWNLOAD_WINDOW + 1 beyond the last linked block we have in
     // common with this peer. The +1 is so we can detect stalling, namely if we
     // would be able to download that next block if the window were 1 larger.
-    int nWindowEnd =
-        state->pindexLastCommonBlock->nHeight + BLOCK_DOWNLOAD_WINDOW;
-    int nMaxHeight =
-        std::min<int>(state->pindexBestKnownBlock->nHeight, nWindowEnd + 1);
+    int nWindowEnd = (*lastCommonBlockOut)->nHeight + BLOCK_DOWNLOAD_WINDOW;
+    int nMaxHeight = std::min<int>(bestBlock->nHeight, nWindowEnd + 1);
     NodeId waitingfor = -1;
     while (pindexWalk->nHeight < nMaxHeight) {
         // Read up to 128 (or more, if more blocks than that are needed)
@@ -804,8 +843,7 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
         int nToFetch = std::min(nMaxHeight - pindexWalk->nHeight,
                                 std::max<int>(count - vBlocks.size(), 128));
         vToFetch.resize(nToFetch);
-        pindexWalk = state->pindexBestKnownBlock->GetAncestor(
-            pindexWalk->nHeight + nToFetch);
+        pindexWalk = bestBlock->GetAncestor(pindexWalk->nHeight + nToFetch);
         vToFetch[nToFetch - 1] = pindexWalk;
         for (unsigned int i = nToFetch - 1; i > 0; i--) {
             vToFetch[i - 1] = vToFetch[i]->pprev;
@@ -823,7 +861,7 @@ static void FindNextBlocksToDownload(NodeId nodeid, unsigned int count,
             }
             if (pindex->nStatus.hasData() || ::ChainActive().Contains(pindex)) {
                 if (pindex->HaveTxsDownloaded()) {
-                    state->pindexLastCommonBlock = pindex;
+                    *lastCommonBlockOut = pindex;
                 }
             } else if (mapBlocksInFlight.count(pindex->GetBlockHash()) == 0) {
                 // The block is not already downloaded, and not yet in flight.
@@ -897,7 +935,7 @@ CalculateTxGetDataTime(const TxId &txid, std::chrono::microseconds current_time,
 }
 
 void RequestTx(CNodeState *state, const TxId &txid,
-               std::chrono::microseconds current_time)
+               uint32_t typeIn, std::chrono::microseconds current_time)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     CNodeState::TxDownloadState &peer_download_state = state->m_tx_download;
     if (peer_download_state.m_tx_announced.size() >=
@@ -916,7 +954,7 @@ void RequestTx(CNodeState *state, const TxId &txid,
     const auto process_time =
         CalculateTxGetDataTime(txid, current_time, !state->fPreferredDownload);
 
-    peer_download_state.m_tx_process_time.emplace(process_time, txid);
+    peer_download_state.m_tx_process_time.emplace(process_time, std::make_pair(txid, typeIn));
 }
 
 } // namespace
@@ -952,6 +990,17 @@ void PeerLogicValidation::InitializeNode(const Config &config, CNode *pnode) {
     }
     if (!pnode->fInbound) {
         PushNodeVersion(config, pnode, connman, GetTime());
+    }
+
+    // VeriBlock:
+    // relay whole POP mempool upon first connection
+    assert(g_rpc_node);
+    assert(g_rpc_node->connman);
+    {
+        LOCK(cs_main);
+        VeriBlock::p2p::RelayPopMempool<altintegration::ATV>(pnode);
+        VeriBlock::p2p::RelayPopMempool<altintegration::VTB>(pnode);
+        VeriBlock::p2p::RelayPopMempool<altintegration::VbkBlock>(pnode);
     }
 }
 
@@ -1557,6 +1606,7 @@ void PeerLogicValidation::BlockChecked(const CBlock &block,
 //
 
 static bool AlreadyHave(const CInv &inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    auto& popmp = VeriBlock::GetPop().getMemPool();
     switch (inv.type) {
         case MSG_TX: {
             assert(recentRejects);
@@ -1591,6 +1641,12 @@ static bool AlreadyHave(const CInv &inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
         }
         case MSG_BLOCK:
             return LookupBlockIndex(BlockHash(inv.hash)) != nullptr;
+        case MSG_POP_ATV:
+            return popmp.isKnown<altintegration::ATV>(VeriBlock::Uint256ToId<altintegration::ATV>(inv.hash));
+        case MSG_POP_VTB:
+            return popmp.isKnown<altintegration::VTB>(VeriBlock::Uint256ToId<altintegration::VTB>(inv.hash));
+        case MSG_POP_VBK:
+            return popmp.isKnown<altintegration::VbkBlock>(VeriBlock::Uint256ToId<altintegration::VbkBlock>(inv.hash));
     }
     // Don't know what it is, just say we already got one
     return true;
@@ -1883,6 +1939,9 @@ static void ProcessGetData(const Config &config, CNode *pfrom,
                 vNotFound.push_back(inv);
             }
         }
+
+        // VeriBlock:
+        VeriBlock::p2p::ProcessGetPopPayloads(it, pfrom, connman, interruptMsgProc, vNotFound);
     } // release cs_main
 
     if (it != pfrom->vRecvGetData.end() && !pfrom->fPauseSend) {
@@ -1937,6 +1996,10 @@ inline static void SendBlockTransactions(const CBlock &block,
     LOCK(cs_main);
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     int nSendFlags = 0;
+
+    // VeriBlock add popData
+    resp.popData = block.popData;
+
     connman->PushMessage(pfrom,
                          msgMaker.Make(nSendFlags, NetMsgType::BLOCKTXN, resp));
 }
@@ -2063,8 +2126,10 @@ static bool ProcessHeadersMessage(const Config &config, CNode *pfrom,
         bool fCanDirectFetch = CanDirectFetch(chainparams.GetConsensus());
         // If this set of headers is valid and ends in a block with at least as
         // much work as our tip, download as much as possible.
-        if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE) &&
-            ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork) {
+        if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE)
+            // VeriBlock: download the chain suggested by the peer
+            // && ::ChainActive().Tip()->nChainWork <= pindexLast->nChainWork
+        ) {
             std::vector<const CBlockIndex *> vToFetch;
             const CBlockIndex *pindexWalk = pindexLast;
             // Calculate all the blocks we'd need to switch to pindexLast, up to
@@ -2720,7 +2785,7 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                 } else if (!fAlreadyHave && !fImporting && !fReindex &&
                            !::ChainstateActive().IsInitialBlockDownload()) {
                     RequestTx(State(pfrom->GetId()), TxId(inv.hash),
-                              current_time);
+                              inv.type, current_time);
                 }
             }
         }
@@ -2969,6 +3034,31 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
         return true;
     }
 
+    if (VeriBlock::isPopActive()) {
+        // CNodeState is defined in cpp file, we can't use it in p2p_sync.cpp.
+        const auto onInv = [pfrom](const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+            AssertLockHeld(cs_main);
+            assert(pfrom != nullptr);
+            CNodeState* nodestate = State(pfrom->GetId());
+            nodestate->m_tx_download.m_tx_announced.erase(TxId{inv.hash});
+            nodestate->m_tx_download.m_tx_in_flight.erase(TxId{inv.hash});
+            EraseTxRequest(TxId{inv.hash});
+        };
+
+        if (strCommand == NetMsgType::POPATV) {
+            LOCK(cs_main);
+            return VeriBlock::p2p::ProcessPopPayload<altintegration::ATV>(pfrom, connman, vRecv, onInv);
+        }
+        if (strCommand == NetMsgType::POPVTB) {
+            LOCK(cs_main);
+            return VeriBlock::p2p::ProcessPopPayload<altintegration::VTB>(pfrom, connman, vRecv, onInv);
+        }
+        if (strCommand == NetMsgType::POPVBK) {
+            LOCK(cs_main);
+            return VeriBlock::p2p::ProcessPopPayload<altintegration::VbkBlock>(pfrom, connman, vRecv, onInv);
+        }
+    }
+
     if (strCommand == NetMsgType::TX) {
         // Stop processing the transaction early if
         // We are in blocks only mode and peer is either not whitelisted or
@@ -3046,7 +3136,7 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                     CInv _inv(MSG_TX, _txid);
                     pfrom->AddInventoryKnown(_inv);
                     if (!AlreadyHave(_inv)) {
-                        RequestTx(State(pfrom->GetId()), _txid, current_time);
+                        RequestTx(State(pfrom->GetId()), _txid, _inv.type, current_time);
                     }
                 }
                 AddOrphanTx(ptx, pfrom->GetId());
@@ -3308,6 +3398,8 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                         // message handling into their own functions)
                         BlockTransactions txn;
                         txn.blockhash = cmpctblock.header.GetHash();
+                        //VeriBlock: copy POP data
+                        txn.popData = cmpctblock.popData;
                         blockTxnMsg << txn;
                         fProcessBLOCKTXN = true;
                     } else {
@@ -3331,6 +3423,11 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                     status = tempBlock.FillBlock(*pblock, dummy);
                     if (status == READ_STATUS_OK) {
                         fBlockReconstructed = true;
+                        if (pblock &&
+                            (pblock->nVersion & VeriBlock::POP_BLOCK_VERSION_BIT)) {
+                            assert(!pblock->popData.empty() &&
+                                   "POP bit is set and POP data is empty");
+                        }
                     }
                 }
             } else {
@@ -3440,7 +3537,8 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
 
             PartiallyDownloadedBlock &partialBlock =
                 *it->second.second->partialBlock;
-            ReadStatus status = partialBlock.FillBlock(*pblock, resp.txn);
+            ReadStatus status =
+                partialBlock.FillBlock(*pblock, resp.txn, resp.popData);
             if (status == READ_STATUS_INVALID) {
                 // Reset in-flight state in case of whitelist.
                 MarkBlockAsReceived(resp.blockhash);
@@ -3531,6 +3629,10 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
             vRecv >> headers[n];
             // Ignore tx count; assume it is 0.
             ReadCompactSize(vRecv);
+            if (headers[n].nVersion & VeriBlock::POP_BLOCK_VERSION_BIT) {
+                altintegration::PopData tmp;
+                vRecv >> tmp;
+            }
         }
 
         return ProcessHeadersMessage(config, pfrom, connman, headers,
@@ -3781,6 +3883,22 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
         if (pfrom->nVersion > BIP0031_VERSION) {
             uint64_t nonce = 0;
             vRecv >> nonce;
+
+            // VeriBlock
+            if (pfrom->nVersion > PING_BESTCHAIN_VERSION) {
+                // VeriBlock: immediately after nonce, receive best block hash
+                LOCK(cs_main);
+                BlockHash bestHash;
+                vRecv >> bestHash;
+                UpdateBestChainTip(pfrom->GetId(), bestHash);
+
+                connman->PushMessage(
+                    pfrom,
+                    msgMaker.Make(NetMsgType::PONG, nonce,
+                                  ::ChainActive().Tip()->GetBlockHash()));
+                return true;
+            }
+
             // Echo the message back with the nonce. This allows for two useful
             // features:
             //
@@ -3837,6 +3955,15 @@ static bool ProcessMessage(const Config &config, CNode *pfrom,
                         sProblem = "Nonce zero";
                     }
                 }
+
+                // VeriBlock
+                if (pfrom->nVersion > PING_BESTCHAIN_VERSION) {
+                    LOCK(cs_main);
+                    BlockHash bestHash;
+                    vRecv >> bestHash;
+                    UpdateBestChainTip(pfrom->GetId(), bestHash);
+                }
+
             } else {
                 sProblem = "Unsolicited pong without ping";
             }
@@ -4429,7 +4556,11 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
         pto->nPingUsecStart = GetTimeMicros();
         if (pto->nVersion > BIP0031_VERSION) {
             pto->nPingNonceSent = nonce;
-            connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce));
+            if(pto->nVersion > PING_BESTCHAIN_VERSION) {
+                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce, ::ChainActive().Tip()->GetBlockHash()));
+            } else {
+                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PING, nonce));
+            }
         } else {
             // Peer is too old to support ping command with nonce, pong will
             // never arrive.
@@ -4860,6 +4991,15 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
                     }
                     pto->m_tx_relay->filterInventoryKnown.insert(txid);
                 }
+
+                // VeriBlock: send offers for PoP related payloads
+                assert(pto);
+                assert(pto->m_tx_relay);
+                if (fSendTrickle) {
+                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_ATV, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryAtvToSend, vInv);
+                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_VTB, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryVtbToSend, vInv);
+                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_VBK, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryVbkToSend, vInv);
+                }
             }
         }
     }
@@ -4961,10 +5101,43 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
         state.nBlocksInFlight < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
         std::vector<const CBlockIndex *> vToDownload;
         NodeId staller = -1;
-        FindNextBlocksToDownload(pto->GetId(),
-                                 MAX_BLOCKS_IN_TRANSIT_PER_PEER -
-                                     state.nBlocksInFlight,
-                                 vToDownload, staller, consensusParams);
+
+        // VeriBlock: find "blocks to download" in 2 chains: one that has "best
+        // chainwork", and second that is reported by peer as best.
+        ProcessBlockAvailability(pto->GetId());
+        // always download chain with higher chainwork
+        if (state.pindexBestKnownBlock) {
+            FindNextBlocksToDownload(
+                pto->GetId(),
+                MAX_BLOCKS_IN_TRANSIT_PER_PEER - state.nBlocksInFlight,
+                vToDownload, staller, consensusParams,
+                state.pindexBestKnownBlock, &state.pindexLastCommonBlock);
+        }
+        // should we fetch announced chain?
+        if (state.pindexLastAnnouncedBlock && state.pindexBestKnownBlock) {
+            // last announced block is by definition always <= chainwork than
+            // best known block by chainwork
+            assert(state.pindexLastAnnouncedBlock->nChainWork <=
+                   state.pindexBestKnownBlock->nChainWork);
+
+            // are they in the same chain?
+            if (state.pindexBestKnownBlock->GetAncestor(
+                    state.pindexLastAnnouncedBlock->nHeight) !=
+                state.pindexLastAnnouncedBlock) {
+                // no, additionally sync 'announced' chain
+                LogPrint(
+                    BCLog::NET,
+                    "Requesting announced best chain %d:%s from peer=%d\n",
+                    state.pindexLastAnnouncedBlock->GetBlockHash().ToString(),
+                    state.pindexLastAnnouncedBlock->nHeight, pto->GetId());
+                FindNextBlocksToDownload(pto->GetId(),
+                                         MAX_BLOCKS_IN_TRANSIT_PER_PEER -
+                                             state.nBlocksInFlight,
+                                         vToDownload, staller, consensusParams,
+                                         state.pindexLastAnnouncedBlock,
+                                         &state.pindexLastCommonAnnouncedBlock);
+            }
+        }
         for (const CBlockIndex *pindex : vToDownload) {
             vGetData.push_back(CInv(MSG_BLOCK, pindex->GetBlockHash()));
             MarkBlockAsInFlight(config, pto->GetId(), pindex->GetBlockHash(),
@@ -5012,17 +5185,20 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
     while (!tx_process_time.empty() &&
            tx_process_time.begin()->first <= current_time &&
            state.m_tx_download.m_tx_in_flight.size() < MAX_PEER_TX_IN_FLIGHT) {
-        const TxId txid = tx_process_time.begin()->second;
+        auto& pair = tx_process_time.begin()->second;
+        const TxId txid = TxId{pair.first};
+        const uint32_t typeIn = pair.second;
         // Erase this entry from tx_process_time (it may be added back for
         // processing at a later time, see below)
         tx_process_time.erase(tx_process_time.begin());
-        CInv inv(MSG_TX, txid);
+        uint32_t flags = typeIn;
+        CInv inv(flags, txid);
         if (!AlreadyHave(inv)) {
             // If this transaction was last requested more than 1 minute ago,
             // then request.
             const auto last_request_time = GetTxRequestTime(txid);
             if (last_request_time <= current_time - GETDATA_TX_INTERVAL) {
-                LogPrint(BCLog::NET, "Requesting %s peer=%d\n", inv.ToString(),
+                LogPrint(BCLog::NET, "requesting %s peer=%d\n", inv.ToString(),
                          pto->GetId());
                 vGetData.push_back(inv);
                 if (vGetData.size() >= MAX_GETDATA_SZ) {
@@ -5039,7 +5215,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, CNode *pto,
                 // requests to outbound peers).
                 const auto next_process_time = CalculateTxGetDataTime(
                     txid, current_time, !state.fPreferredDownload);
-                tx_process_time.emplace(next_process_time, txid);
+                tx_process_time.emplace(next_process_time, std::make_pair(txid, flags));
             }
         } else {
             // We have already seen this transaction, no need to download.

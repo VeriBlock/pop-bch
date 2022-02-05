@@ -2,6 +2,8 @@ abc-ci-builds
 
 *.tar.gz
 
+.vscode
+
 *.exe
 src/bitcoin
 src/bitcoind
@@ -127,3 +129,12 @@ contrib/devtools/split-debug.sh
 
 # vagrant
 .vagrant
+
+cmake-build-*
+install
+.idea
+
+configure~
+compile_commands.json
+.cache
+.vscode
