@@ -5591,7 +5591,7 @@ struct CChainParams {
 
 [<font style="color: red">validation.cpp</font>]
 ```diff
- Amount GetBlockSubsidy(int nHeight, const CChainParams& params) {
+Amount GetBlockSubsidy(int nHeight, const CChainParams& params) {
 -    int halvings = nHeight / params.GetConsensus().nSubsidyHalvingInterval;
 -    // Force block reward to zero when right shift is undefined.
 -    if (halvings >= 64) {
@@ -5610,7 +5610,7 @@ struct CChainParams {
 
 -    return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
 +    return nSubsidy;
- }
+}
 ```
 ```diff
 CChainState::ConnectBlock() {
@@ -6094,4 +6094,878 @@ _case1_endorse_keystone_get_paid():
 +        pop_payout = float(outputs[1]['value'])
 +        assert float(balance) == float(balance1) + pop_payout
          self.log.warning("success! _case1_endorse_keystone_get_paid()")
+```
+
+## Update P2P networking for better POP protocol resolution
+
+[<font style="color: red">net.h</font>]
+```diff
+struct TxRelay {
+...
+         mutable RecursiveMutex cs_tx_inventory;
+-        CRollingBloomFilter filterInventoryKnown GUARDED_BY(cs_tx_inventory){
+-            50000, 0.000001};
++        // VeriBlock: includes inventories for POP P2P sync. Increase size from 50k to 100k.
++        CRollingBloomFilter filterInventoryKnown GUARDED_BY(cs_tx_inventory){100000, 0.000001};
+         // Set of transaction ids we still have to announce.
+...
+         std::set<TxId> setInventoryTxToSend;
++
++        // VeriBlock:
++        std::set<uint256> setInventoryAtvToSend;
++        std::set<uint256> setInventoryVtbToSend;
++        std::set<uint256> setInventoryVbkToSend;
++
+         // Used for BIP35 mempool sending
+...
+};
+...
+void PushInventory(const CInv &inv) {
+-        if (inv.type == MSG_TX && m_tx_relay != nullptr) {
++        // VeriBlock:
++        if ((inv.type == MSG_TX || inv.type == MSG_POP_ATV || inv.type == MSG_POP_VTB || inv.type == MSG_POP_VBK) && m_tx_relay != nullptr) {
+             const TxId txid(inv.hash);
+             LOCK(m_tx_relay->cs_tx_inventory);
+-            if (!m_tx_relay->filterInventoryKnown.contains(txid)) {
++            if (inv.type == MSG_TX && !m_tx_relay->filterInventoryKnown.contains(txid)) {
+                 m_tx_relay->setInventoryTxToSend.insert(txid);
+             }
++            if (inv.type == MSG_POP_ATV && !m_tx_relay->filterInventoryKnown.contains(txid)) {
++                m_tx_relay->setInventoryAtvToSend.insert(txid);
++            }
++            if (inv.type == MSG_POP_VTB && !m_tx_relay->filterInventoryKnown.contains(txid)) {
++                m_tx_relay->setInventoryVtbToSend.insert(txid);
++            }
++            if (inv.type == MSG_POP_VBK && !m_tx_relay->filterInventoryKnown.contains(txid)) {
++                m_tx_relay->setInventoryVbkToSend.insert(txid);
++            }
+         } else if (inv.type == MSG_BLOCK) {
+...
+}
+```
+
+[<font style="color: red">net_processing.cpp</font>]
+```diff
+struct TxDownloadState {
++        // VeriBlock:
++        // first = tx,atv,vtb,vbk id
++        // second = typeIn (inventory type)
++        using IdTypePair = std::pair<uint256, uint32_t>;
++
+         /**
+          * Track when to attempt download of announced transactions (process
+          * time in micros -> txid)
+          */
+-        std::multimap<std::chrono::microseconds, TxId> m_tx_process_time;
++        std::multimap<std::chrono::microseconds, IdTypePair> m_tx_process_time;
+
+         //! Store all the transactions a peer has recently announced
+...
+};
+...
+void RequestTx(CNodeState *state, const TxId &txid,
+-               std::chrono::microseconds current_time)
++               uint32_t typeIn, std::chrono::microseconds current_time)
+     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+...
+     const auto process_time =
+         CalculateTxGetDataTime(txid, current_time, !state->fPreferredDownload);
+
+-    peer_download_state.m_tx_process_time.emplace(process_time, txid);
++    peer_download_state.m_tx_process_time.emplace(process_time, std::make_pair(txid, typeIn));
+}
+...
+void PeerLogicValidation::InitializeNode(const Config &config, CNode *pnode) {
+...
+     if (!pnode->fInbound) {
+         PushNodeVersion(config, pnode, connman, GetTime());
+     }
++
++    // VeriBlock:
++    // relay whole POP mempool upon first connection
++    assert(g_rpc_node);
++    assert(g_rpc_node->connman);
++    {
++        LOCK(cs_main);
++        VeriBlock::p2p::RelayPopMempool<altintegration::ATV>(pnode);
++        VeriBlock::p2p::RelayPopMempool<altintegration::VTB>(pnode);
++        VeriBlock::p2p::RelayPopMempool<altintegration::VbkBlock>(pnode);
++    }
+}
+...
+void PeerLogicValidation::FinalizeNode() {
+...
+     mapNodeState.erase(nodeid);
+-    VeriBlock::p2p::erasePopDataNodeState(nodeid);
+...
+}
+...
+bool AlreadyHave() {
++    auto& popmp = VeriBlock::GetPop().getMemPool();
+     switch (inv.type) {
+         case MSG_TX: {
+             assert(recentRejects);
+...
+         }
+         case MSG_BLOCK:
+             return LookupBlockIndex(BlockHash(inv.hash)) != nullptr;
++        case MSG_POP_ATV:
++            return popmp.isKnown<altintegration::ATV>(VeriBlock::Uint256ToId<altintegration::ATV>(inv.hash));
++        case MSG_POP_VTB:
++            return popmp.isKnown<altintegration::VTB>(VeriBlock::Uint256ToId<altintegration::VTB>(inv.hash));
++        case MSG_POP_VBK:
++            return popmp.isKnown<altintegration::VbkBlock>(VeriBlock::Uint256ToId<altintegration::VbkBlock>(inv.hash));
+     }
+...
+}
+...
+void ProcessGetData() {
+...
++
++        // VeriBlock:
++        VeriBlock::p2p::ProcessGetPopPayloads(it, pfrom, connman, interruptMsgProc, vNotFound);
+     } // release cs_main
+
+     if (it != pfrom->vRecvGetData.end() && !pfrom->fPauseSend) {
+...
+}
+...
+bool ProcessMessage() {
+...
+         return true;
+     }
+
+-    // VeriBlock: if POP is not enabled, ignore POP-related P2P calls
+-    if (VeriBlock::isPopActive()) {
+-        int pop_res = VeriBlock::p2p::processPopData(pfrom, strCommand, vRecv, connman);
+-        if (pop_res >= 0) {
+-            return pop_res;
+-        }
+-    }
+-
+     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
+         (strCommand == NetMsgType::FILTERLOAD ||
+          strCommand == NetMsgType::FILTERADD)) {
+...
+                 } else if (!fAlreadyHave && !fImporting && !fReindex &&
+                            !::ChainstateActive().IsInitialBlockDownload()) {
+                     RequestTx(State(pfrom->GetId()), TxId(inv.hash),
+-                              current_time);
++                              inv.type, current_time);
+...
++    if (VeriBlock::isPopActive()) {
++        // CNodeState is defined in cpp file, we can't use it in p2p_sync.cpp.
++        const auto onInv = [pfrom](const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
++            AssertLockHeld(cs_main);
++            assert(pfrom != nullptr);
++            CNodeState* nodestate = State(pfrom->GetId());
++            nodestate->m_tx_download.m_tx_announced.erase(TxId{inv.hash});
++            nodestate->m_tx_download.m_tx_in_flight.erase(TxId{inv.hash});
++            EraseTxRequest(TxId{inv.hash});
++        };
++
++        if (strCommand == NetMsgType::POPATV) {
++            LOCK(cs_main);
++            return VeriBlock::p2p::ProcessPopPayload<altintegration::ATV>(pfrom, connman, vRecv, onInv);
++        }
++        if (strCommand == NetMsgType::POPVTB) {
++            LOCK(cs_main);
++            return VeriBlock::p2p::ProcessPopPayload<altintegration::VTB>(pfrom, connman, vRecv, onInv);
++        }
++        if (strCommand == NetMsgType::POPVBK) {
++            LOCK(cs_main);
++            return VeriBlock::p2p::ProcessPopPayload<altintegration::VbkBlock>(pfrom, connman, vRecv, onInv);
++        }
++    }
++
+     if (strCommand == NetMsgType::TX) {
+...
+                     if (!AlreadyHave(_inv)) {
+-                        RequestTx(State(pfrom->GetId()), _txid, current_time);
++                        RequestTx(State(pfrom->GetId()), _txid, _inv.type, current_time);
+                     }
+...
+}
+...
+bool PeerLogicValidation::SendMessages() {
+...
+                     }
+                     pto->m_tx_relay->filterInventoryKnown.insert(txid);
+                 }
++
++                // VeriBlock: send offers for PoP related payloads
++                assert(pto);
++                assert(pto->m_tx_relay);
++                if (fSendTrickle) {
++                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_ATV, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryAtvToSend, vInv);
++                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_VTB, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryVtbToSend, vInv);
++                    VeriBlock::p2p::SendPopPayload(pto, connman, MSG_POP_VBK, pto->m_tx_relay->filterInventoryKnown, pto->m_tx_relay->setInventoryVbkToSend, vInv);
++                }
+             }
+...
+-    // VeriBlock offer Pop Data
+-    if (VeriBlock::isPopActive()) {
+-        VeriBlock::p2p::offerPopData<altintegration::ATV>(pto, connman,
+-                                                          msgMaker);
+-        VeriBlock::p2p::offerPopData<altintegration::VTB>(pto, connman,
+-                                                          msgMaker);
+-        VeriBlock::p2p::offerPopData<altintegration::VbkBlock>(pto, connman,
+-                                                               msgMaker);
+-    }
+-
+     // Detect whether we're stalling
+...
+     while (!tx_process_time.empty() &&
+            tx_process_time.begin()->first <= current_time &&
+            state.m_tx_download.m_tx_in_flight.size() < MAX_PEER_TX_IN_FLIGHT) {
+-        const TxId txid = tx_process_time.begin()->second;
++        auto& pair = tx_process_time.begin()->second;
++        const TxId txid = TxId{pair.first};
++        const uint32_t typeIn = pair.second;
+         // Erase this entry from tx_process_time (it may be added back for
+         // processing at a later time, see below)
+         tx_process_time.erase(tx_process_time.begin());
+-        CInv inv(MSG_TX, txid);
++        uint32_t flags = typeIn;
++        CInv inv(flags, txid);
+         if (!AlreadyHave(inv)) {
+...
+                 const auto next_process_time = CalculateTxGetDataTime(
+                     txid, current_time, !state.fPreferredDownload);
+-                tx_process_time.emplace(next_process_time, txid);
++                tx_process_time.emplace(next_process_time, std::make_pair(txid, flags));
+...
+}
+```
+
+[<font style="color: red">protocol.h</font>]
+```diff
+ extern const char *AVARESPONSE;
+ 
++// VeriBlock:
++extern const char *POPATV; // contains ATV
++extern const char *POPVTB; // contains VTB
++extern const char *POPVBK; // contains VBK block
+...
+enum GetDataMsg {
+...
+     MSG_CMPCT_BLOCK = 4,
++
++    // VeriBlock: start numbers after 1 + 2 + 4 = 7
++    MSG_POP_ATV = 8,
++    MSG_POP_VTB = 9,
++    MSG_POP_VBK = 10,
+...
+};
+```
+
+[<font style="color: red">protocol.cpp</font>]
+```diff
+...
+ const char *AVARESPONSE = "avaresponse";
++const char *POPATV="ATV";
++const char *POPVTB="VTB";
++const char *POPVBK="VBK";
+...
+static const std::string allNetMessageTypes[] = {
+...
+     NetMsgType::FEEFILTER,   NetMsgType::SENDCMPCT,  NetMsgType::CMPCTBLOCK,
+-    NetMsgType::GETBLOCKTXN, NetMsgType::BLOCKTXN,
++    NetMsgType::GETBLOCKTXN, NetMsgType::BLOCKTXN,   NetMsgType::POPATV,
++    NetMsgType::POPVTB,      NetMsgType::POPVBK,
+};
+...
+std::string CInv::GetCommand() {
+...
+         case MSG_CMPCT_BLOCK:
+             return cmd.append(NetMsgType::CMPCTBLOCK);
++        case MSG_POP_ATV:
++            return cmd.append(NetMsgType::POPATV);
++        case MSG_POP_VTB:
++            return cmd.append(NetMsgType::POPVTB);
++        case MSG_POP_VBK:
++            return cmd.append(NetMsgType::POPVBK);
+         default:
+...
+}
+```
+
+Use updated p2p_sync service files
+
+[<font style="color: red">vbk/p2p_sync.hpp</font>]
+```
+// Copyright (c) 2019-2021 Xenios SEZC
+// https://www.veriblock.org
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef BITCOIN_SRC_VBK_P2P_SYNC_HPP
+#define BITCOIN_SRC_VBK_P2P_SYNC_HPP
+
+#include <chainparams.h>
+#include <map>
+#include <net_processing.h>
+#include <netmessagemaker.h>
+#include <node/context.h>
+#include <rpc/blockchain.h>
+#include <vbk/pop_common.hpp>
+#include <vbk/util.hpp>
+#include <veriblock/pop.hpp>
+
+namespace VeriBlock {
+
+namespace p2p {
+
+void SendPopPayload(
+    CNode* pto,
+    CConnman* connman,
+    int typeIn,
+    CRollingBloomFilter& filterInventoryKnown,
+    std::set<uint256>& toSend,
+    std::vector<CInv>& vInv) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+void ProcessGetPopPayloads(
+    std::deque<CInv>::iterator& it,
+    CNode* pfrom,
+    CConnman* connman,
+    const std::atomic<bool>& interruptMsgProc,
+    std::vector<CInv>& vNotFound
+
+    ) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+// clang-format off
+template <typename T> static int GetType();
+template <> inline int GetType<altintegration::ATV>(){ return MSG_POP_ATV; }
+template <> inline int GetType<altintegration::VTB>(){ return MSG_POP_VTB; }
+template <> inline int GetType<altintegration::VbkBlock>(){ return MSG_POP_VBK; }
+// clang-format on
+
+template <typename T>
+CInv PayloadToInv(const typename T::id_t& id) {
+    return CInv(GetType<T>(), IdToUint256<T>(id));
+}
+
+template <typename T>
+void RelayPopPayload(
+    CConnman* connman,
+    const T& t)
+{
+    auto inv = PayloadToInv<T>(t.getId());
+    connman->ForEachNode([&inv](CNode* pto) {
+        pto->PushInventory(inv);
+    });
+}
+
+template <typename T, typename F>
+bool ProcessPopPayload(CNode* pfrom, CConnman* connman, CDataStream& vRecv, F onInv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    if ((!g_relay_txes && !pfrom->HasPermission(PF_RELAY)) || (pfrom->m_tx_relay == nullptr)) {
+        LogPrint(BCLog::NET, "%s sent in violation of protocol peer=%d\n", T::name(), pfrom->GetId());
+        pfrom->fDisconnect = true;
+        return true;
+    }
+
+    T data;
+    vRecv >> data;
+
+    LogPrint(BCLog::NET, "received %s from peer %d\n", data.toShortPrettyString(), pfrom->GetId());
+
+    uint256 id = IdToUint256<T>(data.getId());
+    CInv inv(GetType<T>(), id);
+    pfrom->AddInventoryKnown(inv);
+
+    // CNodeState is defined inside net_processing.cpp.
+    // we use that structure in this function onInv().
+    onInv(inv);
+
+    auto& mp = VeriBlock::GetPop().getMemPool();
+    altintegration::ValidationState state;
+    auto result = mp.submit(data, state);
+    if (result.isAccepted()) {
+        // relay this POP payload to other peers
+        RelayPopPayload(connman, data);
+    } else {
+        assert(result.isFailedStateless());
+        // peer sent us statelessly invalid payload.
+        Misbehaving(pfrom->GetId(), 1000, strprintf("peer %d sent us statelessly invalid %s, reason: %s", pfrom->GetId(), T::name(), state.toString()));
+        return false;
+    }
+
+    return true;
+}
+
+template <typename T>
+void RelayPopMempool(CNode* pto) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    auto& mp = VeriBlock::GetPop().getMemPool();
+
+    size_t counter = 0;
+    for (const auto& p : mp.getMap<T>()) {
+        T& t = *p.second;
+        auto inv = PayloadToInv<T>(t.getId());
+        pto->PushInventory(inv);
+        counter++;
+    }
+
+    for (const auto& p : mp.template getInFlightMap<T>()) {
+        T& t = *p.second;
+        auto inv = PayloadToInv<T>(t.getId());
+        pto->PushInventory(inv);
+        counter++;
+    }
+
+    LogPrint(BCLog::NET, "relay %s=%u from POP mempool to peer=%d\n", T::name(), counter, pto->GetId());
+}
+
+} // namespace p2p
+} // namespace VeriBlock
+
+
+#endif
+```
+
+[<font style="color: red">vbk/p2p_sync.cpp</font>]
+```
+// Copyright (c) 2019-2021 Xenios SEZC
+// https://www.veriblock.org
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include "vbk/p2p_sync.hpp"
+#include "validation.h"
+#include <net_processing.h>
+#include <protocol.h>
+#include <vbk/util.hpp>
+#include <veriblock/pop.hpp>
+
+
+namespace VeriBlock {
+namespace p2p {
+
+template <typename T>
+static void DoSubmitPopPayload(
+    CNode* pfrom,
+    CConnman* connman,
+    const CNetMsgMaker& msgMaker,
+    altintegration::MemPool& mp,
+    const CInv& inv,
+    std::vector<CInv>& vNotFound)
+{
+    const auto id = VeriBlock::Uint256ToId<T>(inv.hash);
+    auto* atv = mp.get<T>(id);
+    if (atv == nullptr) {
+        vNotFound.push_back(inv);
+    } else {
+        LogPrint(BCLog::NET, "sending %s to peer %d\n", atv->toShortPrettyString(), pfrom->GetId());
+        connman->PushMessage(pfrom, msgMaker.Make(T::name(), *atv));
+    }
+}
+
+void ProcessGetPopPayloads(
+    std::deque<CInv>::iterator& it,
+    CNode* pfrom,
+    CConnman* connman,
+    const std::atomic<bool>& interruptMsgProc,
+    std::vector<CInv>& vNotFound) EXCLUSIVE_LOCKS_REQUIRED(cs_main) // for pop mempool
+{
+    AssertLockHeld(cs_main);
+    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+    auto& mp = VeriBlock::GetPop().getMemPool();
+    while (it != pfrom->vRecvGetData.end() && (it->type == MSG_POP_ATV || it->type == MSG_POP_VTB || it->type == MSG_POP_VBK)) {
+        if (interruptMsgProc) {
+            return;
+        }
+
+        // Don't bother if send buffer is too full to respond anyway
+        if (pfrom->fPauseSend) {
+            break;
+        }
+
+        const CInv& inv = *it;
+        ++it;
+
+        if (inv.type == MSG_POP_ATV) {
+            DoSubmitPopPayload<altintegration::ATV>(pfrom, connman, msgMaker, mp, inv, vNotFound);
+        } else if (inv.type == MSG_POP_VTB) {
+            DoSubmitPopPayload<altintegration::VTB>(pfrom, connman, msgMaker, mp, inv, vNotFound);
+        } else if (inv.type == MSG_POP_VBK) {
+            DoSubmitPopPayload<altintegration::VbkBlock>(pfrom, connman, msgMaker, mp, inv, vNotFound);
+        }
+    }
+}
+
+void SendPopPayload(
+    CNode* pto,
+    CConnman* connman,
+    int typeIn,
+    CRollingBloomFilter& filterInventoryKnown,
+    std::set<uint256>& toSend,
+    std::vector<CInv>& vInv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    const CNetMsgMaker msgMaker(pto->GetSendVersion());
+
+    for (const auto& hash : toSend) {
+        CInv inv(typeIn, hash);
+        if (filterInventoryKnown.contains(hash)) {
+            LogPrint(BCLog::NET, "inv %s is known by peer %d (bloom filtered)\n", inv.ToString(), pto->GetId());
+            continue;
+        }
+
+        vInv.push_back(inv);
+        filterInventoryKnown.insert(hash);
+
+        if (vInv.size() == MAX_INV_SZ) {
+            connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
+            vInv.clear();
+        }
+    }
+
+    toSend.clear();
+}
+
+
+} // namespace p2p
+
+} // namespace VeriBlock
+
+```
+
+Update POP service API
+
+[<font style="color: red">vbk/pop_service.cpp</font>]
+```diff
+-void InitPopContext(CDBWrapper &db) {
++static uint64_t popScoreComparisons = 0ULL;
++template <typename T>
++void onAcceptedToMempool(const T& t) {
++    assert(g_rpc_node);
++    assert(g_rpc_node->connman);
++    p2p::RelayPopPayload(g_rpc_node->connman.get(), t);
++}
++
++void InitPopContext(CDBWrapper& db)
++{
+     auto payloads_provider = std::make_shared<PayloadsProvider>(db);
+     auto block_provider = std::make_shared<BlockReader>(db);
+     SetPop(payloads_provider, block_provider);
+ 
+-    auto &app = GetPop();
+-    app.getMemPool().onAccepted<altintegration::ATV>(
+-        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::ATV>);
+-    app.getMemPool().onAccepted<altintegration::VTB>(
+-        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VTB>);
+-    app.getMemPool().onAccepted<altintegration::VbkBlock>(
+-        VeriBlock::p2p::offerPopDataToAllNodes<altintegration::VbkBlock>);
++    auto& app = GetPop();
++    app.getMemPool().onAccepted<altintegration::ATV>(onAcceptedToMempool<altintegration::ATV>);
++    app.getMemPool().onAccepted<altintegration::VTB>(onAcceptedToMempool<altintegration::VTB>);
++    app.getMemPool().onAccepted<altintegration::VbkBlock>(onAcceptedToMempool<altintegration::VbkBlock>);
+ }
+```
+
+Update RPC calls
+
+[<font style="color: red">vbk/rpc_register.cpp</font>]
+```diff
+ #include <util/validation.h>
+ #include <validation.h>
++#include <vbk/p2p_sync.hpp>
+ #include <wallet/rpcwallet.h>
+...
+UniValue submitpopIt() {
+...
+     LOCK(cs_main);
+     auto &mp = VeriBlock::GetPop().getMemPool();
+     auto idhex = data.getId().toHex();
+-    auto result = mp.submit<Pop>(data, state, false);
++    auto result = mp.submit<Pop>(data, state);
+     logSubmitResult<Pop>(idhex, result, state);
+
+     bool accepted = result.isAccepted();
++    if (accepted) {
++        // relay this pop payload
++        p2p::RelayPopPayload<Pop>(g_rpc_node->connman.get(), data);
++    }
+     return altintegration::ToJSON<UniValue>(state, &accepted);
+
+}
+```
+
+Update helper methods
+
+[<font style="color: red">vbk/util.hpp</font>]
+```diff
++template <typename T>
++inline uint256 IdToUint256(const typename T::id_t& id)
++{
++    std::vector<uint8_t> v(32);
++    std::copy(id.begin(), id.end(), v.begin());
++    return uint256(v);
++}
++
++template <typename T>
++inline typename T::id_t Uint256ToId(const uint256& u)
++{
++    auto size = T::id_t::size();
++    std::vector<uint8_t> v{u.begin(), u.begin() + size};
++    return typename T::id_t(v);
++}
+```
+
+Update functional tests
+
+[<font style="color: red">test/functional/feature_pop_p2p.py</font>]
+```diff
+ from test_framework.mininode import (
+     P2PInterface,
+-    msg_get_atv,
+ )
+ from test_framework.pop import endorse_block, mine_until_pop_active
+ from test_framework.test_framework import BitcoinTestFramework
+-from test_framework.util import assert_equal
++from test_framework.util import (
++    connect_nodes, assert_equal,
++)
+...
+class BaseNode(P2PInterface):
+...
+         self.executed_msg_get_vtb = 0
+         self.executed_msg_get_vbk = 0
+
+-    def on_ofATV(self, message):
+-        self.log.info("receive message offer ATV")
+-        self.executed_msg_offer_atv = self.executed_msg_offer_atv + 1
+-
+-    def on_ofVTB(self, message):
+-        self.log.info("receive message offer VTB")
+-        self.executed_msg_offer_vtb = self.executed_msg_offer_vtb + 1
+-
+-    def on_ofVBK(self, message):
+-        self.log.info("receive message offer VBK")
+-        self.executed_msg_offer_vbk = self.executed_msg_offer_vbk + 1
+-
+-    def on_ATV(self, message):
+-        self.log.info("receive message ATV")
+-        self.executed_msg_atv = self.executed_msg_atv + 1
+-
+-    def on_VTB(self, message):
+-        self.log.info("receive message VTB")
+-        self.executed_msg_vtb = self.executed_msg_vtb + 1
+-
+-    def on_VBK(self, message):
+-        self.log.info("receive message VBK")
+-        self.executed_msg_vbk = self.executed_msg_vbk + 1
+-
+-    def on_gATV(self, message):
+-        self.log.info("receive message get ATV")
+-        self.executed_msg_get_atv = self.executed_msg_get_atv + 1
+-
+-    def on_gVTB(self, message):
+-        self.log.info("receive message get VTB")
+-        self.executed_msg_get_vtb = self.executed_msg_get_vtb + 1
+-
+-    def on_gVBK(self, message):
+-        self.log.info("receive message get VBK")
+-        self.executed_msg_get_vbk = self.executed_msg_get_vbk + 1
++    def on_inv(self, message):
++        for inv in message.inv:
++            if inv.type == 8:
++                self.log.info("receive message offer ATV")
++                self.executed_msg_offer_atv = self.executed_msg_offer_atv + 1
++            if inv.type == 9:
++                self.log.info("receive message offer VTB")
++                self.executed_msg_offer_vtb = self.executed_msg_offer_vtb + 1
++            if inv.type == 10:
++                self.log.info("receive message offer VBK")
++                self.executed_msg_offer_vbk = self.executed_msg_offer_vbk + 1
++
+...
+class PopP2P(BitcoinTestFramework):
+         tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
+         self.log.info("endorsing block 5 on node0 by miner {}".format(addr))
+-        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
++        endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
+
+         bn = BaseNode(self.log)
+
+         self.nodes[0].add_p2p_connection(bn)
+-        time.sleep(2)
+-
+-        assert bn.executed_msg_atv == 0
+-        assert bn.executed_msg_offer_atv == 1
+-        assert bn.executed_msg_offer_vbk == 1
+
+-        msg = msg_get_atv([atv_id])
+-        self.nodes[0].p2p.send_message(msg)
+-        self.nodes[0].p2p.send_message(msg)
+-        self.nodes[0].p2p.send_message(msg)
++        time.sleep(20)
+
+-        time.sleep(2)
+-
+-        assert bn.executed_msg_atv == 3
++        assert_equal(bn.executed_msg_atv, 0)
++        assert_equal(bn.executed_msg_offer_atv, 1)
++        assert_equal(bn.executed_msg_offer_vbk, 1)
+
+         self.log.info("_run_sync_case successful")
+...
+         self.log.info("endorsing block 5 on node0 by miner {}".format(addr))
+         tipheight = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['height']
+
+-        atv_id = endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
+-
+-        msg = msg_get_atv([atv_id])
+-        self.nodes[0].p2p.send_message(msg)
++        endorse_block(self.nodes[0], self.apm, tipheight - 5, addr)
+
+-        time.sleep(5)
++        time.sleep(20)
+
+-        assert_equal(bn.executed_msg_atv, 1)
++        assert_equal(bn.executed_msg_offer_atv, 1)
+         assert_equal(bn.executed_msg_offer_vbk, 2)
+```
+
+[<font style="color: red">test/functional/feature_pop_sync.py</font>]
+```diff
++    def _one_by_one(self):
++        for node in self.nodes:
++            # VBK block
++            self.log.info("Submitting VBK")
++            block = self.apm.mineVbkBlocks(1)
++            response = node.submitpopvbk(block.toVbkEncodingHex())
++            assert response['accepted'], response
++            self.log.info("VBK accepted to mempool")
++            sync_pop_mempools(self.nodes, timeout=30)
++
++            # VTB
++            self.log.info("Submitting VTB")
++            lastBtc = node.getbtcbestblockhash()
++            vtb = self.apm.endorseVbkBlock(
++                block,  # endorsed vbk block
++                lastBtc
++            )
++            response = node.submitpopvtb(vtb.toVbkEncodingHex())
++            assert response['accepted'], response
++            self.log.info("VTB accepted to mempool")
++            sync_pop_mempools(self.nodes, timeout=100)
++
++            # ATV
++            self.log.info("Submitting ATV")
++            tip = self.nodes[0].getbestblockhash()
++            altblock = self.nodes[0].getblock(tip)
++            endorse_block(self.nodes[0], self.apm, altblock['height'], self.nodes[0].getnewaddress())
++            self.log.info("ATV accepted to mempool")
++            sync_pop_mempools(self.nodes, timeout=100)
++
++            self.nodes[2].generate(nblocks=1)
++            self.sync_all()
+...
+class PoPSync(BitcoinTestFramework):
+             self.nodes[0].generate(nblocks=1)
+             # endorse every block
+             self.nodes[2].waitforblockheight(height)
+-            self.log.info("node2 endorsing block {} by miner {}".format(height, addr2))
+             node2_txid = endorse_block(self.nodes[2], self.apm, height, addr2)
++            self.log.info("node2 endorsing block {} by miner {}: {}".format(height, addr2, node2_txid))
+
+             # endorse each keystone
+             if height % keystoneInterval == 0:
+                 self.nodes[0].waitforblockheight(height)
+-                self.log.info("node0 endorsing block {} by miner {}".format(height, addr0))
+                 node0_txid = endorse_block(self.nodes[0], self.apm, height, addr0)
++                self.log.info("node0 endorsing block {} by miner {}: {}".format(height, addr0, node0_txid))
+
+                 self.nodes[1].waitforblockheight(height)
+-                self.log.info("node1 endorsing block {} by miner {}".format(height, addr1))
+                 node1_txid = endorse_block(self.nodes[1], self.apm, height, addr1)
++                self.log.info("node1 endorsing block {} by miner {}: {}".format(height, addr1, node1_txid))
+
+                 # wait until node[1] gets relayed pop tx
+-                self.sync_all(self.nodes, timeout=20)
++                self.sync_all(self.nodes, timeout=60)
+                 self.log.info("transactions relayed")
+...
+         self.apm = MockMiner()
+
++        self._one_by_one()
+         self._check_pop_sync()
+```
+
+[<font style="color: red">test/functional/test_framework/messages.py</font>]
+```diff
+class CInv:
+         0: "Error",
+         1: "TX",
+         2: "Block",
+-        4: "CompactBlock"
++        4: "CompactBlock",
++        8: "ATV",
++        9: "VTB",
++        10: "VBK",
+```
+
+[<font style="color: red">test/functional/test_framework/mininode.py</font>]
+```diff
+from test_framework.messages import (
+     msg_version,
+     NODE_NETWORK,
+     sha256,
+-    #VeriBlock
+-    msg_offer_atv,
+-    msg_offer_vtb,
+-    msg_offer_vbk,
+-    msg_atv,
+-    msg_vtb,
+-    msg_vbk,
+-    msg_get_atv,
+-    msg_get_vtb,
+-    msg_get_vbk,
+)
+...
+MESSAGEMAP = {
+     b"tx": msg_tx,
+     b"verack": msg_verack,
+     b"version": msg_version,
+-    #VeriBlock
+-    b"ofATV": msg_offer_atv,
+-    b"ofVTB": msg_offer_vtb,
+-    b"ofVBK": msg_offer_vbk,
+-    b"ATV": msg_atv,
+-    b"VTB": msg_vtb,
+-    b"VBK": msg_vbk,
+-    b"gATV": msg_get_atv,
+-    b"gVTB": msg_get_vtb,
+-    b"gVBK": msg_get_vbk,
+}
+...
+class P2PInterface(P2PConnection):
+         self.send_message(msg_verack())
+         self.nServices = message.nServices
+
+-     #VeriBlock
+-    def on_ofATV(self, message):
+-        pass
+-    def on_ofVTB(self, message):
+-        pass
+-    def on_ofVBK(self, message):
+-        pass
+-    def on_ATV(self, message):
+-        pass
+-    def on_VTB(self, message):
+-        pass
+-    def on_VBK(self, message):
+-        pass
+-    def on_gATV(self, message):
+-        pass
+-    def on_gVTB(self, message):
+-        pass
+-    def on_gVBK(self, message):
+-        pass
+-
+     # Connection helper methods
 ```
