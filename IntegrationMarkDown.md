@@ -6969,3 +6969,943 @@ class P2PInterface(P2PConnection):
 -
      # Connection helper methods
 ```
+
+## Protocol fixes
+
+Update RPC calls
+
+[<font style="color: red">rpc/client.cpp</font>]
+```diff
+CRPCConvertParam vRPCConvertParams[] = {
+...
+     { "getpopdatabyheight", 0, "block_height"},
++    { "getrawpopmempool", 0, "verbosity"},
+     { "setmempooldostalledcheck", 0, "flag"},
+...
+}
+```
+
+[<font style="color: red">rpc/rawtransaction.cpp</font>]
+```diff
+UniValue getrawtransaction() {
+... 
+     const CChainParams &params = config.GetChainParams();
+-    if (txid == params.GenesisBlock().hashMerkleRoot) {
+-        // Special exception for the genesis block coinbase transaction
+-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+-                           "The genesis block coinbase is not considered an "
+-                           "ordinary transaction and cannot be retrieved");
+-    }
+...
+}
+...
+UniValue getrawtransaction() {
+...
+     BlockHash hash_block;
+-    if (!GetTransaction(txid, tx, params.GetConsensus(), hash_block,
+-                        blockindex)) {
+-        std::string errmsg;
+-        if (blockindex) {
+-            if (!blockindex->nStatus.hasData()) {
+-                throw JSONRPCError(RPC_MISC_ERROR, "Block not available");
++    if(txid == Params().GenesisBlock().hashMerkleRoot) {
++        // special case: user queried coinbase tx from genesis block
++        assert(Params().GenesisBlock().vtx.size() == 1);
++        tx = Params().GenesisBlock().vtx[0];
++    } else {
++        if (!GetTransaction(txid, tx, params.GetConsensus(), hash_block,
++                            blockindex)) {
++            std::string errmsg;
++            if (blockindex) {
++                if (!blockindex->nStatus.hasData()) {
++                    throw JSONRPCError(RPC_MISC_ERROR, "Block not available");
++                }
++                errmsg = "No such transaction found in the provided block";
++            } else if (!g_txindex) {
++                errmsg = "No such mempool transaction. Use -txindex to enable "
++                         "blockchain transaction queries";
++            } else if (!f_txindex_ready) {
++                errmsg = "No such mempool transaction. Blockchain transactions are "
++                         "still in the process of being indexed";
++            } else {
++                errmsg = "No such mempool or blockchain transaction";
+             }
+-            errmsg = "No such transaction found in the provided block";
+-        } else if (!g_txindex) {
+-            errmsg = "No such mempool transaction. Use -txindex to enable "
+-                     "blockchain transaction queries";
+-        } else if (!f_txindex_ready) {
+-            errmsg = "No such mempool transaction. Blockchain transactions are "
+-                     "still in the process of being indexed";
+-        } else {
+-            errmsg = "No such mempool or blockchain transaction";
+-        }
+-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+-                           errmsg +
++            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
++                               errmsg +
+                                ". Use gettransaction for wallet transactions.");
++        }
+...
+}
+```
+
+[<font style="color: red">vbk/rpc_register.cpp</font>]
+```diff
+UniValue getrawpopmempool() {
+...
+             "\nReturns the list of VBK blocks, ATVs and VTBs stored in POP "
+             "mempool.\n",
+-            {},
++            {
++                {"verbosity", RPCArg::Type::NUM, /* default */ "0", "0 for lists of ids, 1 for lists of entities, 2 for validity status"},
++            },
+             RPCResult{"TODO"},
+             RPCExamples{HelpExampleCli(cmdname, "") +
+                         HelpExampleRpc(cmdname, "")},
+         }
+             .Check(request);
+ 
++        int verbosity = 0;
++        if (!request.params[0].isNull()) {
++            verbosity = request.params[0].get_int();
++        }
++
+         auto &mp = VeriBlock::GetPop().getMemPool();
+-        return altintegration::ToJSON<UniValue>(mp);
++
++        if (verbosity == 0) {
++            return altintegration::ToJSON<UniValue>(mp, false);
++        } else if (verbosity == 1) {
++            return altintegration::ToJSON<UniValue>(mp, true);
++        } else {
++            // returns pairs {"id": "...", "state": {...validation state...}} in order
++            // that would have been used for POW mining.
++            UniValue result(UniValue::VOBJ);
++            UniValue atvs(UniValue::VARR);
++            UniValue vtbs(UniValue::VARR);
++            UniValue vbkblocks(UniValue::VARR);
++
++            // intentionally ignore return value
++            mp.generatePopData(
++                [&](const altintegration::ATV& p, const altintegration::ValidationState& state) {
++                    UniValue j(UniValue::VOBJ);
++                    j.pushKV("id", altintegration::HexStr(p.getId()));
++                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
++                    atvs.push_back(j);
++                },
++                [&](const altintegration::VTB& p, const altintegration::ValidationState& state) {
++                    UniValue j(UniValue::VOBJ);
++                    j.pushKV("id", altintegration::HexStr(p.getId()));
++                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
++                    vtbs.push_back(j);
++                },
++                [&](const altintegration::VbkBlock& p, const altintegration::ValidationState& state) {
++                    UniValue j(UniValue::VOBJ);
++                    j.pushKV("id", altintegration::HexStr(p.getId()));
++                    j.pushKV("validity", altintegration::ToJSON<UniValue>(state));
++                    vbkblocks.push_back(j);
++                });
++
++            result.pushKV("atvs", atvs);
++            result.pushKV("vtbs", vtbs);
++            result.pushKV("vbkblocks", vbkblocks);
++            return result;
++        }
+...
+}
+...
+template <typename T>
+bool GetPayload() {
+...
+         std::transform(containing.begin(), containing.end(),
+                        std::back_inserter(containingBlocks),
+                        [](const decltype(*containing.begin()) &blockHash) {
++                           assert(blockHash.size() == uint256().size() && "unexpected containing block hash size in the payloads index");
+                            return BlockHash(uint256(blockHash));
+                        });
+ 
+         for (const auto &blockHash : containing) {
++            assert(blockHash.size() == uint256().size() && "unexpected containing block hash size in the payloads index");
+             auto *index = LookupBlockIndex(BlockHash(uint256(blockHash)));
+             assert(index && "state and index mismatch");
+...
+}
+...
+UniValue extractblockinfo() {
+...
++            if (container.keystones.firstPreviousKeystone.size() != uint256().size()) {
++                return JSONRPCError(RPC_INVALID_PARAMETER, "can not deserialize ContextInfoContainer err: unexpected firstPreviousKeystone size");
++            }
++            if (container.keystones.secondPreviousKeystone.size() != uint256().size()) {
++                return JSONRPCError(RPC_INVALID_PARAMETER, "can not deserialize ContextInfoContainer err: unexpected secondPreviousKeystone size");
++            }
+...
+}
+...
+-UniValue setmempooldostalledcheck(const Config &, const JSONRPCRequest &req) {
++UniValue getpopscorestats(const Config &, const JSONRPCRequest &req)
++{
++    std::string cmdname = "getpopscorestats";
++    // clang-format off
+     RPCHelpMan{
+-        "setmempooldostalledcheck",
+-        "set the mempool dostalledcheck flag",
+-        {
+-            {"flag", RPCArg::Type::BOOL, RPCArg::Optional::NO, "flag"},
+-        },
++        cmdname,
++        "\nReturns POP-related fork resolution statistics.\n",
+         {},
+-        RPCExamples{HelpExampleCli("setmempooldostalledcheck", "\"flag\"") +
+-                    HelpExampleRpc("setmempooldostalledcheck", "\"flag\"")},
++        RPCResult{"TODO"},
++        RPCExamples{
++            HelpExampleCli(cmdname, "") +
++            HelpExampleRpc(cmdname, "")},
+     }
+         .Check(req);
++    // clang-format on
+ 
+-    EnsurePopEnabled();
+-
++    auto ret = UniValue(UniValue::VOBJ);
++    UniValue stats(UniValue::VOBJ);
+     {
+         LOCK(cs_main);
+-
+-        bool flag = req.params[0].get_bool();
+-        VeriBlock::GetPop().getMemPool().setDoStalledCheck(flag);
++        stats.pushKV("popScoreComparisons", getPopScoreComparisons());
+     }
+-
+-    return UniValue{};
++    ret.pushKV("stats", stats);
++    return ret;
+ }
+...
+CRPCCommand commands[] = {
+...
+     {"pop_mining", "getrawvbkblock", getrawvbkblock, {"id"}},
+-    {"pop_mining", "getrawpopmempool", &getrawpopmempool, {}},
+-    {"pop_mining", "setmempooldostalledcheck", &setmempooldostalledcheck, {"flag"}},
+-    {"pop_mining", "extractblockinfo", &extractblockinfo, {"data_array"}}};
++    {"pop_mining", "getrawpopmempool", getrawpopmempool, {"verbosity"}},
++    {"pop_mining", "extractblockinfo", extractblockinfo, {"data_array"}},
++    {"pop_mining", "getpopscorestats", getpopscorestats, {}}}; 
+```
+
+[<font style="color: red">vbk/test/unit/rpc_service_tests.cpp</font>]
+```diff
+-BOOST_FIXTURE_TEST_CASE(setmempooldostalledcheck_test, E2eFixture)
+-{
+-    {
+-        LOCK(cs_main);
+-        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(), true);
+-    }
+-
+-    BOOST_CHECK_NO_THROW(CallRPC("setmempooldostalledcheck false"));
+-
+-    {
+-        LOCK(cs_main);
+-        BOOST_CHECK_EQUAL(VeriBlock::GetPop().getMemPool().getDoStalledCheck(), false);
+-    }
+-}
+-
+...
++BOOST_FIXTURE_TEST_CASE(extractblockinfo_inavlid_test, E2eFixture)
++{
++    CBlock block;
++    bool read = ReadBlockFromDisk(block, ChainActive().Tip(), Params().GetConsensus());
++    assert(read && "expected to read endorsed block from disk");
++
++    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
++    stream << ChainActive().Tip()->GetBlockHeader();
++    std::vector<uint8_t> header{stream.begin(), stream.end()};
++
++    altintegration::ContextInfoContainer container;
++    container.height = 100;
++    container.keystones.firstPreviousKeystone.resize(33);
++    container.keystones.secondPreviousKeystone.resize(32);
++
++    altintegration::PublicationData pubData{};
++    pubData.identifier = 1000;
++    pubData.header = header;
++    auto serializedContext = altintegration::SerializeToVbkEncoding(container);
++    pubData.contextInfo = serializedContext;
++
++    auto result = CallRPC(std::string("extractblockinfo [\"") + altintegration::SerializeToHex(pubData) + "\"]");
++    BOOST_CHECK_NE(find_value(result, "code").get_int64(), 0);
++
++    container.keystones.firstPreviousKeystone.resize(32);
++    container.keystones.secondPreviousKeystone.resize(33);
++
++    serializedContext = altintegration::SerializeToVbkEncoding(container);
++    pubData.contextInfo = serializedContext;
++
++    result = CallRPC(std::string("extractblockinfo [\"") + altintegration::SerializeToHex(pubData) + "\"]");
++    BOOST_CHECK_NE(find_value(result, "code").get_int64(), 0);
++}
++
++BOOST_FIXTURE_TEST_CASE(getpopscorestats_test, E2eFixture)
++{
++    auto result = CallRPC(std::string("getpopscorestats"));
++    auto stats = find_value(result.get_obj(), "stats").get_obj();
++    auto comparisons = find_value(stats, "popScoreComparisons").get_int64();
++    CreateAndProcessBlock({}, cbKey);
++
++    result = CallRPC(std::string("getpopscorestats"));
++    stats = find_value(result.get_obj(), "stats").get_obj();
++    auto comparisons_after = find_value(stats, "popScoreComparisons").get_int64();
++
++    BOOST_CHECK_EQUAL(comparisons + 1, comparisons_after);
++}
++
+```
+
+Update POP service calls
+
+[<font style="color: red">vbk/pop_service.cpp</font>]
+```diff
+CBlockIndex *compareTipToBlock() {
+... 
+     int result = 0;
+-    if (isPopActive(tip->nHeight)) {
++    if (Params().isPopActive(tip->nHeight)) {
+         result = compareForks(*tip, *candidate);
+     } else {
+-        result = CBlockIndexWorkComparator()(tip, candidate) == true ? -1 : 1;
++        result = CBlockIndexWorkComparator()(tip, candidate) ? -1 : 1;
+     }
+...
+}
+...
++std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks)
++{
++    LOCK(cs_main);
++    return altintegration::getLastKnownBlocks(GetPop().getVbkBlockTree(), blocks);
+ }
+ 
+-std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) {
+-    AssertLockHeld(cs_main);
+-    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().vbk(),
+-                                              blocks);
+-}
+-std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) {
+-    AssertLockHeld(cs_main);
+-    return altintegration::getLastKnownBlocks(GetPop().getAltBlockTree().btc(),
+-                                              blocks);
++std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks)
++{
++    LOCK(cs_main);
++    return altintegration::getLastKnownBlocks(GetPop().getBtcBlockTree(), blocks);
+ }
+...
+-int compareForks(const CBlockIndex &leftForkTip,
+-                 const CBlockIndex &rightForkTip) {
++int compareForks(const CBlockIndex& leftForkTip, const CBlockIndex& rightForkTip) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
++{
++    auto& pop = GetPop();
+     AssertLockHeld(cs_main);
+-    auto &pop = GetPop();
+-
+     if (&leftForkTip == &rightForkTip) {
+         return 0;
+     }
+ 
++    if (leftForkTip.GetAncestor(rightForkTip.nHeight) == &rightForkTip) {
++        // do not run POP FR on blocks which are already in active chain
++        return 1;
++    }
++
+     auto left = blockToAltBlock(leftForkTip);
+...
++    popScoreComparisons++;
+     return pop.getAltBlockTree().comparePopScore(left.hash, right.hash);
+}
+...
++// get stats on POP score comparisons
++uint64_t getPopScoreComparisons() EXCLUSIVE_LOCKS_REQUIRED(cs_main)
++{
++    AssertLockHeld(cs_main);
++    return popScoreComparisons;
++}
+```
+
+Update validation calls
+
+[<font style="color: red">validation.cpp</font>]
+```diff
+DisconnectResult CChainState::DisconnectBlock() {
+... 
+-    return ApplyBlockUndo(blockUndo, block, pindex, view);
++    DisconnectResult result = ApplyBlockUndo(blockUndo, block, pindex, view);
++    if (result != DisconnectResult::FAILED) {
++        AssertLockHeld(cs_main);
++        if (VeriBlock::isCrossedBootstrapBlock()) {
++            altintegration::ValidationState state;
++            bool ok = VeriBlock::setState(block.hashPrevBlock, state);
++            assert(ok);
++        }
++    }
++    return result;
+}
+...
+DisconnectResult ApplyBlockUndo() {
+...
+-    AssertLockHeld(cs_main);
+-    if (VeriBlock::isCrossedBootstrapBlock()) {
+-        altintegration::ValidationState state;
+-        VeriBlock::setState(block.hashPrevBlock, state);
+-    }
+-
+     // Move best block pointer to previous block.
+     view.SetBestBlock(block.hashPrevBlock);
+...
+}
+...
+CChainState::ConnectBlock() {
+...
+     if (VeriBlock::isPopActive()) {
+         auto& pop = VeriBlock::GetPop();
++        auto* alttip = pop.getAltBlockTree().getBestChain().tip();
++        assert(pindexNew->nHeight == alttip->getHeight());
+         auto* vbktip = pop.getAltBlockTree().vbk().getBestChain().tip();
+...
+}
+...
+bool CChainState::ActivateBestChain() {
+...
+                         auto tmp_set = setBlockIndexCandidates;
++                        bool canBeConnected = false;
+                         for (auto *candidate : tmp_set) {
++                            bool hasTxsAndValid = candidate->HaveTxsDownloaded() && TestBlockIndex(candidate);
+                             // if candidate has txs downloaded & currently arrived
+                             // block is ancestor of `candidate`
+-                            if (candidate->HaveTxsDownloaded() &&
+-                                TestBlockIndex(candidate) &&
+-                                candidate->GetAncestor(blockindex->nHeight) ==
+-                                    blockindex) {
+-                                // then do pop fr with candidate, instead of
+-                                // blockindex
++                            if (hasTxsAndValid && candidate->GetAncestor(blockindex->nHeight) == blockindex) {
++                                // then do pop fr with candidate, instead of blockindex
+                                 pindexBestChain =
+                                     VeriBlock::compareTipToBlock(candidate);
++                                canBeConnected = true;
+                             }
++
++                            if (hasTxsAndValid && blockindex->GetAncestor(candidate->nHeight) == candidate) {
++                                canBeConnected = true;
++                            }
++                        }
++
++                        // do not try connecting block if there are no candidates
++                        if (!canBeConnected) {
++                            break;
+                         }
+...
+                 assert(pindexBestChain);
+-                // if pindexBestHeader is a direct successor of pindexBestChain, pindexBestHeader is still best.
++                // VeriBlock: if pindexBestHeader is a direct successor of pindexBestChain, pindexBestHeader is still best.
+                 // otherwise pindexBestChain is new best pindexBestHeader
+                 if (pindexBestHeader == nullptr || pindexBestHeader->GetAncestor(pindexBestChain->nHeight) != pindexBestChain) {
++                    assert(pindexBestChain->IsValid());
+                     pindexBestHeader = pindexBestChain;
+...
+}
+...
+bool CChainState::LoadBlockIndex() {
+...
+             pindex->nStatus = pindex->nStatus.withFailedParent();
+             setDirtyBlockIndex.insert(pindex);
+         }
+-        if (pindex->IsValid(BlockValidity::TRANSACTIONS) &&
+-            (pindex->HaveTxsDownloaded() || pindex->pprev == nullptr)) {
+-            setBlockIndexCandidates.insert(pindex);
+-        }
++        // VeriBlock: we need to add into the block_index_candidates only current tip
++        //if (pindex->IsValid(BlockValidity::TRANSACTIONS) &&
++        //    (pindex->HaveTxsDownloaded() || pindex->pprev == nullptr)) {
++        //    setBlockIndexCandidates.insert(pindex);
++        //}
+ 
+         if (pindex->nStatus.isInvalid() &&
+...
+             (pindexBestHeader == nullptr ||
+              CBlockIndexWorkComparator()(pindexBestHeader, pindex))) {
+             pindexBestHeader = pindex;
++            setBlockIndexCandidates.insert(pindexBestHeader);
+...
+}
+```
+
+Add BFI to QT interface
+
+[<font style="color: red">qt/transactiondesc.cpp</font>]
+```diff
+QString TransactionDesc::FormatBFIStatus() {
+     QString vbkMessage = "";
+ 
+     try {
+-        ///////////////////////////////////////////////
+-        // VBK NETWORK
+-
+-        std::string stdVbkEndPoint = gArgs.GetArg("bfiendpoint", "");// read from conf.
++        std::string bfiendpoint = gArgs.GetArg("bfiendpoint", ""); // read from conf.
++        if (bfiendpoint.empty()) {
++            return tr("BFI not setup yet, specify bfiendpoint=url in btcsq.conf");
++        }
+ 
+-        QString vbkEndPoint = QString::fromStdString(stdVbkEndPoint);
+-        QString url = vbkEndPoint;
+-        // if BFI end point does not contain arguments, append to end of URL.
+-        if( !url.contains("%1") && !url.contains("%2") ) {
+-            if( !url.endsWith('/') ) {
+-                url = url + '/';
+-            }
+-            url = url + "%1/chains/transactions/%2";
++        QString input = QString::fromStdString(bfiendpoint + "/%1/chains/transactions/%2")
++                            .arg(QString::number(VeriBlock::ALT_CHAIN_ID))
++                            .arg(rec->getTxID());
++        QUrl qurl = QUrl::fromUserInput(input);
++        if (!qurl.isValid()) {
++            return tr("URL is not valid. bfiendpoint=%s").arg(input);
+         }
+-        url = url.arg(QString::number(VeriBlock::ALT_CHAIN_ID)).arg(rec->getTxID());
+ 
+         QEventLoop loop;
+...
+         req.setRawHeader("User-Agent", "vBitcoin Daemon");
+-        req.setUrl(QUrl(url));
++        req.setUrl(qurl);
+         QNetworkReply *reply = nam.get(req);
+...
+         QJsonObject o = objectFromString(dataLine.toUtf8().constData());
+ 
+-        // VBK NETWORK
+-        ///////////////////////////////////////////////
+-
+         if (reply->error()) {
+-            if (vbkEndPoint.isEmpty()) {
+-                vbkMessage = tr("BFI not setup yet, specify bfiendpoint=url in vbitcoin.conf");
+-            }
+-            else {
+-                vbkMessage = tr("Unconfirmed Bitcoin Finality");
+-            }
++            qDebug() << "[BFI] Error: " << reply->errorString();
++            return tr("Error getting Bitcoin Finality: %1").arg(reply->errorString());
+         }
+-        else {
+-            int bitcoinFinality = o.value("bitcoinFinality").toInt();
+-            bool isAttackInProgress = o.value("isAttackInProgress").toBool();
+ 
+-            if (isAttackInProgress) {
+-                vbkMessage = tr("Alternate Chain Detected, wait for Bitcoin Finality");
+-            }
+-            else {
+-                if( bitcoinFinality >= 0 ) {
+-                    vbkMessage = tr("%1 blocks of Bitcoin Finality");
+-                    ++bitcoinFinality;
+-                } else {
+-                    vbkMessage = tr("%1 blocks until Bitcoin Finality");
+-                    bitcoinFinality = -bitcoinFinality;
+-                }
+-                vbkMessage = vbkMessage.arg(QString::number(bitcoinFinality));
+-            }
++        bool isAttackInProgress = o.value("isAttackInProgress").toBool();
++        if (isAttackInProgress) {
++            return tr("Detected Alternative Chain, wait for Bitcoin Finality");
++        }
++
++        int bitcoinFinality = o.value("bitcoinFinality").toInt();
++        if (bitcoinFinality >= 0) {
++            return tr("%1 blocks of Bitcoin Finality").arg(bitcoinFinality);
+         }
+-    } catch(...) {
++
++        return tr("%1 blocks until Bitcoin Finality").arg(-bitcoinFinality);
++    } catch (const std::exception& e) {
++        qDebug() << "[BFI] Got exception: " << e.what();
++    } catch (...) {
++        qDebug() << "[BFI] Unknown exception";
+     }
+ 
+-    return vbkMessage;
++    return "";
+}
+```
+
+Update functional tests
+
+[<font style="color: red">test/functional/feature_pop_fork_resolution_on_unconnected.py</font>]
+```
+#!/usr/bin/env python3
+# Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2019-2021 Xenios SEZC
+# https://www.veriblock.org
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or http://www.opensource.org/licenses/mit-license.php.
+
+"""
+Start 2 nodes.
+Disconnect node[1].
+Mine 100 orphans on node[0].
+node[1] mines 2 blocks, total height is 202 (fork B)
+node[1] is connected to node[0]
+send header of the block 201
+send block 202
+
+After sync has been completed, expect FindBestChain called with 100 candidates
+"""
+
+from test_framework.mininode import (
+    P2PInterface,
+)
+
+from test_framework.blocktools import create_block, create_coinbase, create_tx_with_script
+from test_framework.pop import mine_until_pop_active, PopMiningContext
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import (
+    connect_nodes, disconnect_nodes, assert_equal, wait_until
+)
+from test_framework.messages import (
+    CBlock, CBlockHeader, msg_headers, msg_sendheaders, msg_block
+)
+
+
+class BaseNode(P2PInterface):
+    def __init__(self, log=None):
+        super().__init__()
+        self.log = log
+
+class PopFrUnconnected(BitcoinTestFramework):
+    def set_test_params(self):
+        self.setup_clean_chain = True
+        self.num_nodes = 1
+        self.extra_args = [["-txindex"]]
+        self.extra_args = [x + ['-debug=pop'] for x in self.extra_args]
+        self.orphans_to_generate = 100
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+        self.skip_if_no_pypoptools()
+
+    def setup_network(self):
+        self.setup_nodes()
+        mine_until_pop_active(self.nodes[0])
+        self.popctx = PopMiningContext(self.nodes[0])
+
+    def get_best_block(self, node):
+        hash = node.getbestblockhash()
+        return node.getblock(hash)
+
+    def _find_best_chain_on_unconnected_block(self):
+        self.log.warning("starting _find_best_chain_on_unconnected_block()")
+        lastblock = self.nodes[0].getblockcount()
+
+        candidates = []
+        for i in range(self.orphans_to_generate):
+            addr1 = self.nodes[0].getnewaddress()
+            hash = self.nodes[0].generatetoaddress(nblocks=1, address=addr1)[-1]
+            candidates.append(hash)
+            self.invalidatedheight = lastblock + 1
+            self.invalidated = self.nodes[0].getblockhash(self.invalidatedheight)
+            self.nodes[0].invalidateblock(self.invalidated)
+            new_lastblock = self.nodes[0].getblockcount()
+            assert new_lastblock == lastblock
+
+        for c in candidates:
+            self.nodes[0].reconsiderblock(c)
+
+        self.log.info("node0 generated {} orphans".format(self.orphans_to_generate))
+        assert self.get_best_block(self.nodes[0])['height'] == lastblock + 1
+
+        compares_before = self.nodes[0].getpopscorestats()['stats']['popScoreComparisons']
+
+        # connect to fake node
+        self.bn = BaseNode(self.log)
+        self.nodes[0].add_p2p_connection(self.bn)
+
+        # generate 2 blocks to send from the fake node
+
+        block_to_connect_hash = self.nodes[0].getblockhash(lastblock)
+        block_to_connect = self.nodes[0].getblock(block_to_connect_hash)
+        tip = int(block_to_connect_hash, 16)
+        height = block_to_connect["height"] + 1
+        block_time = block_to_connect["time"] + 1
+
+        block1 = create_block(self.popctx, tip, create_coinbase(height), block_time)
+        block1.solve()
+        self.missing_block = block1
+
+        headers_message = msg_headers()
+        headers_message.headers = [CBlockHeader(block1)]
+        self.nodes[0].p2p.send_and_ping(headers_message)
+        self.popctx.accept_block(height, block1.hash, block_to_connect_hash)
+
+        tip = int(block1.hash, 16)
+        height = height + 1
+        block_time = block_time + 1
+
+        block2 = create_block(self.popctx, tip, create_coinbase(height + 1), block_time + 1)
+        block2.solve()
+        self.connecting_block = block2
+
+        block_message = msg_block(block2)
+        self.nodes[0].p2p.send_and_ping(block_message)
+
+        prevbest = self.nodes[0].getblockhash(lastblock + 1)
+        newbest = self.nodes[0].getbestblockhash()
+        assert newbest == prevbest, "bad tip. \n\tExpected : {}\n\tGot      : {}".format(prevbest, newbest)
+
+        compares_after = self.nodes[0].getpopscorestats()['stats']['popScoreComparisons']
+        test_comparisons = compares_after - compares_before
+        assert test_comparisons == 0, "Expected {} comparisons, got {}".format(self.orphans_to_generate, test_comparisons)
+        self.log.info("node0 made {} POP score comparisons".format(test_comparisons))
+
+        assert self.get_best_block(self.nodes[0])['height'] == lastblock + 1
+        self.log.warning("_find_best_chain_on_unconnected_block() succeeded!")
+
+    def _find_best_chain_on_filling_gap_block(self):
+        self.log.warning("starting _find_best_chain_on_unconnected_block()")
+        lastblock = self.nodes[0].getblockcount()
+        best = self.nodes[0].getbestblockhash()
+        assert best != self.connecting_block.hash
+
+        compares_before = self.nodes[0].getpopscorestats()['stats']['popScoreComparisons']
+
+        block_message = msg_block(self.missing_block)
+        self.nodes[0].p2p.send_and_ping(block_message)
+
+        newlastblock = self.nodes[0].getblockcount()
+        assert newlastblock == lastblock + 1, "bad tip. \n\tExpected height : {}\n\tGot      : {}".format(lastblock + 1, newlastblock)
+
+        best = self.nodes[0].getbestblockhash()
+        assert best == self.connecting_block.hash, "bad tip. \n\tExpected : {}\n\tGot      : {}".format(self.connecting_block.hash, best)
+
+        compares_after = self.nodes[0].getpopscorestats()['stats']['popScoreComparisons']
+        test_comparisons = compares_after - compares_before
+        assert test_comparisons == 2, "Expected {} comparisons, got {}".format(2, test_comparisons)
+        self.log.info("node0 made {} POP score comparisons".format(test_comparisons))
+
+        self.log.warning("_find_best_chain_on_filling_gap_block() succeeded!")
+
+    def run_test(self):
+        """Main test logic"""
+
+        from pypoptools.pypopminer import MockMiner
+        self.apm = MockMiner()
+
+        self._find_best_chain_on_unconnected_block()
+        self._find_best_chain_on_filling_gap_block()
+
+
+if __name__ == '__main__':
+    PopFrUnconnected().main()
+```
+
+[<font style="color: red">test/functional/feature_pop_shutdown_sync.py</font>]
+```
+#!/usr/bin/env python3
+# Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2019-2021 Xenios SEZC
+# https://www.veriblock.org
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or http://www.opensource.org/licenses/mit-license.php.
+
+"""
+
+"""
+
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.pop import mine_until_pop_active
+from test_framework.util import assert_raises_rpc_error, connect_nodes, disconnect_nodes
+import time
+
+class PopShutdownSync(BitcoinTestFramework):
+    def set_test_params(self):
+        self.setup_clean_chain = True
+        self.num_nodes = 2
+        self.extra_args = [["-txindex"], ["-txindex"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+        self.skip_if_no_pypoptools()
+
+    def setup_network(self):
+        self.setup_nodes()
+        mine_until_pop_active(self.nodes[0])
+
+        # all nodes connected and synced
+        for i in range(self.num_nodes - 1):
+            connect_nodes(self.nodes[i + 1], self.nodes[i])
+        self.sync_all()
+
+    def get_best_block(self, node):
+        hash = node.getbestblockhash()
+        return node.getblock(hash)
+
+    def run_test(self):
+        self.sync_all(self.nodes[0:2])
+        lastblock = self.nodes[0].getblockcount()
+        self.log.info("nodes synced with block height %d", lastblock)
+
+        from pypoptools.pypopminer import MockMiner
+        self.apm = MockMiner()
+
+        disconnect_nodes(self.nodes[0], self.nodes[1])
+        lastblock = self.nodes[1].getblockcount()
+        self.nodes[1].generate(nblocks=500)
+        self.log.info("node1 disconnected and generating more blocks")
+        self.nodes[1].waitforblockheight(lastblock + 500)
+        lastblock = self.nodes[1].getblockcount()
+        self.log.info("node1 reached block height %d", lastblock)
+        connect_nodes(self.nodes[0], self.nodes[1])
+        self.log.info("node1 reconnected")
+        time.sleep(1) # Sleep for 1 second to let headers sync
+
+        lastblock = self.get_best_block(self.nodes[0])
+        self.stop_node(0)
+        self.log.info("node0 stopped with block {}".format(lastblock))
+        self.start_node(0)
+        connect_nodes(self.nodes[0], self.nodes[1])
+        self.log.info("node0 restarted")
+        self.sync_all(self.nodes[0:2])
+
+
+if __name__ == '__main__':
+    PopShutdownSync().main()
+
+```
+
+[<font style="color: red">test/functional/feature_pop_stratum_compat.py</font>]
+```
+#!/usr/bin/env python3
+# Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2019-2021 Xenios SEZC
+# https://www.veriblock.org
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or http://www.opensource.org/licenses/mit-license.php.
+
+"""
+Start 1 node.
+Run "getblocktemplate" at node[0] height == 0.
+Expect to return no POP fields in JSON response.
+Mine until POP is activated.
+Submit 1 ATV, 1 VTB, 1 VBK (valid) to POP mempool.
+Run "getblocktemplate".
+Expect to get stratum-related fields in response.
+"""
+
+from test_framework.pop import endorse_block, create_endorsed_chain, mine_until_pop_active
+from test_framework.authproxy import JSONRPCException
+from test_framework.pop_const import POP_PAYOUT_DELAY
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import (
+    connect_nodes,
+    disconnect_nodes, assert_equal, assert_raises_rpc_error,
+)
+import json
+
+def assert_no_field(source, key):
+    assert isinstance(source, dict)
+    if key in source:
+        raise Exception("Key {} expected to be missing in {}, but it is present: {}".format(key, source, source[key]))
+
+def assert_field_exists(source, key, type):
+    assert isinstance(source, dict)
+    if key not in source:
+        raise Exception("Expected key {} to exist in {}".format(key, source))
+
+    try:
+        if not type(source[key]):
+            raise Exception("Key {} type verification failed. Value={}".format(key, source[key]))
+    except Exception as e:
+        print(e)
+        raise
+
+'''
+If this test fails, then compatibility with Stratum (https://github.com/VeriBlock/vbk-ri-stratum-pool) is broken.
+'''
+class PopStratumCompat(BitcoinTestFramework):
+    def set_test_params(self):
+        self.setup_clean_chain = True
+        self.num_nodes = 1
+        self.extra_args = [["-txindex"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+        self.skip_if_no_pypoptools()
+
+    def setup_network(self):
+        self.setup_nodes()
+
+    def getblocktemplate(self):
+        arg = {
+            "capabilities": ["coinbasetxn", "workid", "coinbase/append"],
+            "rules": ["segwit"]
+        }
+        return self.nodes[0].getblocktemplate(arg)
+
+    def run_test(self):
+        """Main test logic"""
+        from pypoptools.pypopminer import MockMiner
+        self.apm = MockMiner()
+
+        node = self.nodes[0]
+        addr = node.getnewaddress()
+
+        # stop 1 block behind activation
+        self.log.info("Mining blocks until activation -5 blocks")
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+        mine_until_pop_active(node, addr, delta=-5)
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+        # check that getblocktemplate does NOT have pop-related fields before POP activation
+
+        self.log.info("Check that getblocktemplate does not have POP fields")
+        resp = self.getblocktemplate()
+        assert_no_field(resp, 'pop_data')
+        assert_no_field(resp, 'pop_data_root')
+        assert_no_field(resp, 'pop_first_previous_keystone')
+        assert_no_field(resp, 'pop_second_previous_keystone')
+        assert_no_field(resp, 'pop_rewards')
+
+        self.log.info("Mining blocks until activation +5 blocks")
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+        mine_until_pop_active(node, addr, delta=+5)
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+
+        self.log.info("Mine chain of {} consecutive endorsed blocks".format(POP_PAYOUT_DELAY))
+        create_endorsed_chain(node, self.apm, POP_PAYOUT_DELAY, addr)
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+        endorse_block(self.nodes[0], self.apm, node.getblockcount() - 5, addr)
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+        self.log.info("Check that getblocktemplate does have POP fields")
+        resp = self.getblocktemplate()
+
+        is_dict = lambda x: isinstance(x, dict)
+        is_list = lambda x: isinstance(x, list)
+        is_int = lambda x: isinstance(x, int)
+        is_hex = lambda x: bytes.fromhex(x)
+        is_payload = lambda x: is_dict(x) and "id" in x and "serialized" in x
+        is_payload_list = lambda x: is_list(x) and all(is_payload(p) for p in x)
+
+        assert_field_exists(resp, 'pop_data', type=is_dict)
+        assert_field_exists(resp['pop_data'], 'atvs', type=is_payload_list)
+        assert_field_exists(resp['pop_data'], 'vtbs', type=is_payload_list)
+        assert_field_exists(resp['pop_data'], 'vbkblocks', type=is_payload_list)
+        assert_field_exists(resp['pop_data'], 'version', type=is_int)
+        assert_field_exists(resp, 'pop_data_root', type=is_hex)
+        assert_field_exists(resp, 'pop_first_previous_keystone', type=is_hex)
+        assert_field_exists(resp, 'pop_second_previous_keystone', type=is_hex)
+        assert_field_exists(resp, 'pop_rewards', type=is_list)
+        for reward in resp['pop_rewards']:
+            assert_field_exists(reward, 'amount', type=is_int)
+            assert_field_exists(reward, 'payout_info', type=is_hex)
+        self.log.info("Current node[0] height {}".format(node.getblockcount()))
+
+
+if __name__ == '__main__':
+    PopStratumCompat().main()
+```
