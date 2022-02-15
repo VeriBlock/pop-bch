@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  # name of container
+  vbch:
+    build:
+      context: .
+      dockerfile: ubuntu.Dockerfile
+    ports:
+      - 0.0.0.0:18333:18333 # p2p
+      - 0.0.0.0:18332:18332 # rpc
+      - 127.0.0.1:28332:28332 # zmq raw blocks
+    volumes:
+      - ./data:/home/bitcoin/.bitcoin/poptestnet:rw
+    command: sh -c 'sleep 7 && bitcoind -poptestnet'
