@@ -487,6 +487,7 @@ add_library(server
 	vbk/merkle.cpp
 	vbk/params.cpp
 	vbk/pop_service.cpp
+	vbk/genesis.cpp
 	vbk/rpc_register.cpp
 	vbk/p2p_sync.cpp
 	addrdb.cpp

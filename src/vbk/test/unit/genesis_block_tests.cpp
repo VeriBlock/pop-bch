@@ -7,10 +7,12 @@
 
 #include "vbk/genesis.hpp"
 #include <chainparams.h>
+#include <config.h>
+#include <test/util/setup_common.h>
 #include <consensus/validation.h>
 #include <validation.h>
 
-BOOST_AUTO_TEST_SUITE(VBK_GenesisBlock)
+BOOST_AUTO_TEST_SUITE(genesis_block_tests)
 
 struct GenesisBlockFixture {
     GenesisBlockFixture() = default;
@@ -26,7 +28,9 @@ struct GenesisBlockFixture {
         auto& params = Params();
         const CBlock& block = params.GenesisBlock();
         BlockValidationState state;
-        bool result = CheckBlock(block, state, params.GetConsensus(), true);
+        const Config &config = GetConfig();
+        BlockValidationOptions options(config);
+        bool result = CheckBlock(block, state, params.GetConsensus(), options.withCheckPoW(true));
         BOOST_CHECK(result);
         if (!result) {
             printf("State: %s\n", state.GetDebugMessage().c_str());
@@ -61,7 +65,7 @@ BOOST_FIXTURE_TEST_CASE(test, GenesisBlockFixture)
 {
         // Do the actual block mining
         {
-            init("poptestnet");
+            init("poptest");
 
             CBlock block = VeriBlock::MineGenesisBlock(
                 1340,
@@ -75,7 +79,7 @@ BOOST_FIXTURE_TEST_CASE(test, GenesisBlockFixture)
             printf("%s\n", block.ToString().c_str());
         }
 
-    check("poptestnet");
+    check("poptest");
 }
 
 BOOST_FIXTURE_TEST_CASE(regtest, GenesisBlockFixture)
@@ -97,7 +101,6 @@ BOOST_FIXTURE_TEST_CASE(regtest, GenesisBlockFixture)
     //    }
 
     check("regtest");
-    check("detregtest");
 }
 
 
