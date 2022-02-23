@@ -12,6 +12,7 @@
 #include <tinyformat.h>
 #include <util/strencodings.h>
 #include <util/system.h>
+#include <vbk/genesis_common.hpp>
 
 #include <cassert>
 
@@ -537,15 +538,16 @@ public:
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
 
+        std::string initialPubkey = "047c62bbf7f5aa4dd5c16bad99ac621b857fac4e93de86e45f5ada73404eeb44dedcf377b03c14a24e9d51605d9dd2d8ddaef58760d9c4bb82d9c8f06d96e79488";
+        std::string pszTimestamp = "VeriBlock";
+
         genesis =
-            CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
+            VeriBlock::CreateGenesisBlock(1341, 1172721186, 0x1d00ffff, 1, 50 * COIN, initialPubkey, pszTimestamp);
         consensus.hashGenesisBlock = genesis.GetHash();
-        //assert(consensus.hashGenesisBlock ==
-        //       uint256S("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526"
-        //                "f8d77f4943"));
-        //assert(genesis.hashMerkleRoot ==
-        //       uint256S("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b"
-        //                "7afdeda33b"));
+        assert(consensus.hashGenesisBlock ==
+               uint256S("00000000b4512179e880fa8985d0b048ad9f7a06bbe68c5ac082f44f70ed985b"));
+        assert(genesis.hashMerkleRoot ==
+               uint256S("ae96b15c560919830f151a185e2ca4b1b40cb322d644f282d13ce3a778a1e9ee"));
 
         vFixedSeeds.clear();
         vSeeds.clear();

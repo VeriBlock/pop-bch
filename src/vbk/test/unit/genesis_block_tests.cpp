@@ -63,21 +63,21 @@ BOOST_FIXTURE_TEST_CASE(main, GenesisBlockFixture)
 
 BOOST_FIXTURE_TEST_CASE(test, GenesisBlockFixture)
 {
-        // Do the actual block mining
-        {
-            init("poptest");
-
-            CBlock block = VeriBlock::MineGenesisBlock(
-                1340,
-                pszTimestamp,
-                initialPubkey,
-                0x1d00ffff, // 30 sec on macbook pro 2013
-                1,
-                0,
-                50 * COIN);
-
-            printf("%s\n", block.ToString().c_str());
-        }
+//        // Do the actual block mining
+//        {
+//            init("poptest");
+//
+//            CBlock block = VeriBlock::MineGenesisBlock(
+//                1340,
+//                pszTimestamp,
+//                initialPubkey,
+//                0x1d00ffff, // 30 sec on macbook pro 2013
+//                1,
+//                0,
+//                50 * COIN);
+//
+//            printf("%s\n", block.ToString().c_str());
+//        }
 
     check("poptest");
 }
