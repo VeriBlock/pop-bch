@@ -464,8 +464,9 @@ public:
         consensus.CSVHeight = 1;
         consensus.powLimit = uint256S(
             "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
+        // 3 days
+        //VeriBlock: reduced to 3 days to mitigate spiking difficulty due to excess hashrate
+        consensus.nPowTargetTimespan = 3 * 24 * 60 * 60;
         consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
