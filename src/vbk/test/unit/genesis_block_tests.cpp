@@ -71,7 +71,7 @@ BOOST_FIXTURE_TEST_CASE(test, GenesisBlockFixture)
 //                1340,
 //                pszTimestamp,
 //                initialPubkey,
-//                0x1d00ffff, // 30 sec on macbook pro 2013
+//                0x1d07ffff, // 30 sec on macbook pro 2013
 //                1,
 //                0,
 //                50 * COIN);

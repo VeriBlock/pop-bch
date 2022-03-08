@@ -463,12 +463,12 @@ public:
         consensus.BIP66Height = 1;
         consensus.CSVHeight = 1;
         consensus.powLimit = uint256S(
-            "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+            "000007ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // 3 days
         //VeriBlock: reduced to 3 days to mitigate spiking difficulty due to excess hashrate
         consensus.nPowTargetTimespan = 3 * 24 * 60 * 60;
         consensus.nPowTargetSpacing = 10 * 60;
-        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
 
         // two days
@@ -502,7 +502,9 @@ public:
         consensus.uahfHeight = 0;
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 0;
+        consensus.daaHeight = 500;
+        // VeriBlock: DAA expects height to be this high
+        assert(consensus.daaHeight > consensus.nPowTargetTimespan / consensus.nPowTargetSpacing);
 
         // November 15, 2018 hard fork
         consensus.magneticAnomalyHeight = 0;
@@ -514,25 +516,29 @@ public:
         consensus.phononHeight = 0;
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
-        consensus.axionActivationTime = 0;
+        // VeriBlock: disable Axion due to powLimit check
+        consensus.axionActivationTime = 1889438400;
 
         // May 15, 2021 12:00:00 UTC protocol upgrade
         consensus.tachyonActivationTime = 0;
 
-        // Nov 15, 2021 12:00:00 UTC protocol upgrade
-        consensus.selectronActivationTime = 0;
+        // Nov 15, 2029 12:00:00 UTC protocol upgrade
+        // Effectively disable it due to malfunction
+        // Tests fail with mandatory-script-verify-flag-failed error and
+        // Insufficient Funds error
+        consensus.selectronActivationTime = 1889438400;
 
         // VeriBlock
         consensus.VeriBlockPopSecurityHeight = 1;
 
-        diskMagic[0] = 0xfa;
-        diskMagic[1] = 0xbf;
-        diskMagic[2] = 0xb5;
-        diskMagic[3] = 0xda;
-        netMagic[0] = 0xda;
-        netMagic[1] = 0xb5;
-        netMagic[2] = 0xbf;
-        netMagic[3] = 0xfa;
+        diskMagic[0] = 0x0b;
+        diskMagic[1] = 0x11;
+        diskMagic[2] = 0x09;
+        diskMagic[3] = 0x01;
+        netMagic[0] = 0xf4;
+        netMagic[1] = 0xe5;
+        netMagic[2] = 0xf3;
+        netMagic[3] = 0x01;
 
         nDefaultPort = 18333;
         nPruneAfterHeight = 1000;
@@ -543,12 +549,12 @@ public:
         std::string pszTimestamp = "VeriBlock";
 
         genesis =
-            VeriBlock::CreateGenesisBlock(1341, 1172721186, 0x1d00ffff, 1, 50 * COIN, initialPubkey, pszTimestamp);
+            VeriBlock::CreateGenesisBlock(1340, 97094286, 0x1d07ffff, 1, 50 * COIN, initialPubkey, pszTimestamp);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock ==
-               uint256S("00000000b4512179e880fa8985d0b048ad9f7a06bbe68c5ac082f44f70ed985b"));
+               uint256S("000000015a1791b593053fe95626e6879cbf1be1f8fdb324ff28cf05d5da4bc3"));
         assert(genesis.hashMerkleRoot ==
-               uint256S("ae96b15c560919830f151a185e2ca4b1b40cb322d644f282d13ce3a778a1e9ee"));
+               uint256S("314feb65abc8be73f5a93a0f6967a58c3d9526e7522adf1a09e43d700d34f1ff"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
