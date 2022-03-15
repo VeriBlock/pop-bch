@@ -490,8 +490,7 @@ public:
         consensus.enableMinerFund = false;
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork =
-            ChainParamsConstants::TESTNET_MINIMUM_CHAIN_WORK;
+        consensus.nMinimumChainWork = uint256S("0x00");
 
         // By default assume that the signatures in ancestors of this block are
         // valid.
