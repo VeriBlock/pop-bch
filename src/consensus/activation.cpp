@@ -81,6 +81,10 @@ bool IsAxionEnabled(const Consensus::Params &params,
         return false;
     }
 
+    if (pindexPrev->pprev == nullptr) {
+        return false;
+    }
+
     return pindexPrev->GetMedianTimePast() >=
            gArgs.GetArg("-axionactivationtime", params.axionActivationTime);
 }

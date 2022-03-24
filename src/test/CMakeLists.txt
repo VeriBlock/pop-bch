@@ -195,6 +195,7 @@ add_boost_unit_tests_to_suite(bitcoin test_bitcoin
 		../vbk/test/unit/vbk_merkle_tests.cpp
 		../vbk/test/unit/forkresolution_tests.cpp
 		../vbk/test/unit/rpc_service_tests.cpp
+		../vbk/test/unit/genesis_block_tests.cpp
 		../vbk/test/unit/pop_reward_tests.cpp
 
 		# Wallet tests

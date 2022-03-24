@@ -11,7 +11,7 @@
 namespace VeriBlock {
 
 const static int32_t POP_BLOCK_VERSION_BIT = 0x80000UL;
-const static int64_t ALT_CHAIN_ID = 0x3e4fac;
+const static int64_t ALT_CHAIN_ID = 0x3e4fac26ff;
 
 }  // namespace VeriBlock
 
